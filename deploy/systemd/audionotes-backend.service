@@ -1,0 +1,29 @@
+[Unit]
+Description=cjpa's Notes backend (FastAPI/uvicorn)
+After=network.target
+
+[Service]
+Type=simple
+# Adjust to wherever you check out/copy the repo on the server.
+WorkingDirectory=/opt/audionotes
+# --app-dir src makes `backend` importable as a top-level package, matching
+# pyproject.toml's pythonpath used for local dev/tests.
+ExecStart=/opt/audionotes/.venv/bin/uvicorn backend.main:app --app-dir src --host 127.0.0.1 --port 8000
+Restart=always
+RestartSec=3
+
+# Run as a dedicated, unprivileged user rather than root.
+User=audionotes
+Group=audionotes
+
+Environment=PYTHONUNBUFFERED=1
+Environment=API_TOKEN=changeme
+Environment=DATA_DIR=/var/lib/audionotes
+Environment=WHISPER_MODEL_SIZE=small
+Environment=WHISPER_DEVICE=cpu
+Environment=WHISPER_COMPUTE_TYPE=int8
+Environment=OLLAMA_BASE_URL=http://127.0.0.1:11434
+Environment=OLLAMA_MODEL=llama3.2:3b
+
+[Install]
+WantedBy=multi-user.target
