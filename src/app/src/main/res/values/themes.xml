@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Base platform window theme. The actual Material 3 theming (indigo primary,
+         red error, light scheme, Roboto type) is applied in Compose via
+         com.cjpa.notes.ui.theme.CjpasNotesTheme; this only controls native window
+         chrome (status bar, default background) before Compose takes over. -->
+    <style name="Theme.CjpasNotes" parent="android:Theme.Material.Light.NoActionBar">
+        <item name="android:statusBarColor">@color/indigo_primary_dark</item>
+        <item name="android:windowBackground">@color/white</item>
+    </style>
+</resources>

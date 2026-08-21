@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">cjpa\'s Notes</string>
+    <string name="widget_description">Start or stop a cjpa\'s Notes recording</string>
+    <string name="widget_label_start">Start Recording</string>
+    <string name="widget_label_stop">Stop Recording</string>
+</resources>

@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="indigo_primary">#FF3F51B5</color>
+    <color name="indigo_primary_dark">#FF303F9F</color>
+    <color name="indigo_primary_light">#FFC5CAE9</color>
+    <color name="red_error">#FFD32F2F</color>
+    <color name="red_error_dark">#FFB71C1C</color>
+    <color name="white">#FFFFFFFF</color>
+</resources>
