@@ -6,4 +6,9 @@
     <color name="red_error">#FFD32F2F</color>
     <color name="red_error_dark">#FFB71C1C</color>
     <color name="white">#FFFFFFFF</color>
+
+    <!-- Copywaste brand colors, sampled from the copyWaste wordmark at copywaste.org. -->
+    <color name="copywaste_navy">#FF09136C</color>
+    <color name="copywaste_red">#FFC40606</color>
+    <color name="copywaste_off_white">#FFF6F4F0</color>
 </resources>

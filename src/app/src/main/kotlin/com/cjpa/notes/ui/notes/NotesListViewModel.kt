@@ -11,6 +11,7 @@ import com.cjpa.notes.data.local.NoteSortField
 import com.cjpa.notes.data.local.SortOrder
 import com.cjpa.notes.data.local.UploadState
 import com.cjpa.notes.data.repository.NotesRepository
+import com.cjpa.notes.data.repository.SettingsRepository
 import com.cjpa.notes.recording.RecordingService
 import com.cjpa.notes.recording.RecordingStateHolder
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -63,6 +64,7 @@ private fun NoteEntity.toUiModel(): NoteUiModel {
 @HiltViewModel
 class NotesListViewModel @Inject constructor(
     private val notesRepository: NotesRepository,
+    private val settingsRepository: SettingsRepository,
     @ApplicationContext private val appContext: Context
 ) : ViewModel() {
 
@@ -77,10 +79,11 @@ class NotesListViewModel @Inject constructor(
     val uiState: StateFlow<NotesListUiState> = combine(
         sort.flatMapLatest { s -> notesRepository.observeNotes(s) },
         sort,
-        isRefreshing
-    ) { notes, currentSort, refreshing ->
+        isRefreshing,
+        settingsRepository.state
+    ) { notes, currentSort, refreshing, settings ->
         NotesListUiState(
-            notes = notes.map { it.toUiModel() },
+            notes = notes.filter { it.status in settings.statusFilter }.map { it.toUiModel() },
             sort = currentSort,
             isRefreshing = refreshing
         )

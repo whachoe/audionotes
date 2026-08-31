@@ -8,15 +8,21 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Slider
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
@@ -107,6 +113,17 @@ fun NoteDetailScreen(
                         color = MaterialTheme.colorScheme.error
                     )
                 }
+                if (uiState.audioUrl != null) {
+                    Spacer(Modifier.height(12.dp))
+                    AudioPlayerRow(
+                        isPlaying = uiState.isPlaying,
+                        isPreparing = uiState.isPlayerPreparing,
+                        positionMs = uiState.playbackPositionMs,
+                        durationMs = uiState.playbackDurationMs.takeIf { it > 0L } ?: uiState.durationMs,
+                        onToggle = viewModel::togglePlayback,
+                        onSeek = viewModel::seekTo
+                    )
+                }
                 Spacer(Modifier.height(16.dp))
                 OutlinedTextField(
                     value = uiState.markdown,
@@ -119,5 +136,41 @@ fun NoteDetailScreen(
                 )
             }
         }
+    }
+}
+
+@Composable
+private fun AudioPlayerRow(
+    isPlaying: Boolean,
+    isPreparing: Boolean,
+    positionMs: Long,
+    durationMs: Long,
+    onToggle: () -> Unit,
+    onSeek: (Long) -> Unit
+) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        FilledIconButton(onClick = onToggle, enabled = !isPreparing) {
+            if (isPreparing) {
+                CircularProgressIndicator(modifier = Modifier.size(20.dp))
+            } else {
+                Icon(
+                    imageVector = if (isPlaying) Icons.Filled.Pause else Icons.Filled.PlayArrow,
+                    contentDescription = if (isPlaying) "Pause" else "Play recording"
+                )
+            }
+        }
+        Spacer(Modifier.width(8.dp))
+        Slider(
+            value = positionMs.coerceAtMost(durationMs.coerceAtLeast(1L)).toFloat(),
+            valueRange = 0f..durationMs.coerceAtLeast(1L).toFloat(),
+            onValueChange = { onSeek(it.toLong()) },
+            modifier = Modifier.weight(1f)
+        )
+        Spacer(Modifier.width(4.dp))
+        Text(
+            text = "${formatDuration(positionMs)} / ${formatDuration(durationMs)}",
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
     }
 }

@@ -45,6 +45,13 @@ class RecordingService : LifecycleService() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         super.onStartCommand(intent, flags, startId)
+        // Android 14+ requires startForeground() within a few seconds of every
+        // startForegroundService() call - regardless of which action triggered
+        // it, or the whole process gets killed with
+        // ForegroundServiceDidNotStartInTimeException. Satisfy that unconditionally
+        // and immediately, before doing anything that could fail or branch away
+        // (a MediaRecorder error, or the stop path, which stops right back out).
+        goForeground(RecordingNotification.build(this, startTimeMs.takeIf { mediaRecorder != null } ?: System.currentTimeMillis()))
         when (intent?.action) {
             ACTION_START_RECORDING -> startRecording()
             ACTION_STOP_RECORDING -> stopRecording()
@@ -132,11 +139,16 @@ class RecordingService : LifecycleService() {
                 file.delete()
             }
             updateRecordingWidget(applicationContext)
-        }
 
-        NotificationManagerCompat.from(this).cancel(RecordingNotification.NOTIFICATION_ID)
-        stopForegroundCompat()
-        stopSelf()
+            // Only stop the service once the DB write + upload enqueue above have
+            // actually completed. lifecycleScope is cancelled the moment onDestroy()
+            // runs, so calling stopSelf() synchronously right after launch{} (as this
+            // used to) raced this coroutine and silently dropped the note before any
+            // of it ran - stopping had to move to the end of the coroutine itself.
+            NotificationManagerCompat.from(this@RecordingService).cancel(RecordingNotification.NOTIFICATION_ID)
+            stopForegroundCompat()
+            stopSelf()
+        }
     }
 
     private suspend fun setRecordingPref(isRecording: Boolean) {

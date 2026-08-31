@@ -1,7 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Placeholder mic glyph. Deliberately simple/swappable: the user intends to
-     redesign this icon later. Only referenced from the FAB and the widget, both
-     of which recolor/backdrop it, so its own fill color just needs to be opaque. -->
+<!-- Mic glyph (Mic Badge concept, approved for the FAB and the widget). Both
+     callers recolor/backdrop it, so its own fill color just needs to be opaque. -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="24dp"
     android:height="24dp"
