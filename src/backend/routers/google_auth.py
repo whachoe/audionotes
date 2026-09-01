@@ -8,9 +8,10 @@ a session token issued. Google only ever redirects to /callback for the
 exact redirect_uri registered on our OAuth client, carrying the single-use
 `state` /start generated.
 
-On success, /callback hands the app a session token via a deep link
-(copywastenotes://auth?token=...) that the app's manifest is registered to
-receive, so the phone lands back in the app already signed in.
+On success, /callback either hands the app a session token via a deep link
+(copywastenotes://auth?token=...), for mobile - or sets a session cookie and
+redirects to "/", for the web frontend (Phase 3.2). Which one depends on
+whether /start was opened with ?client=web - see PendingAuthState.client.
 """
 from __future__ import annotations
 
@@ -19,7 +20,7 @@ import secrets
 from urllib.parse import urlencode
 
 import httpx
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi import status as http_status
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.security import HTTPAuthorizationCredentials
@@ -29,6 +30,7 @@ from sqlmodel import Session as DbSession
 from sqlmodel import select
 
 from .. import auth
+from ..auth import SESSION_COOKIE_NAME
 from ..config import Settings, get_settings
 from ..db import get_session
 from ..models import GoogleCredential, Note, PendingAuthState, Session, User, utcnow
@@ -56,6 +58,7 @@ def _require_google_configured(settings: Settings) -> None:
 
 @router.get("/start")
 def start(
+    client: str = Query(default="mobile"),
     settings: Settings = Depends(get_settings),
     session: DbSession = Depends(get_session),
 ):
@@ -63,7 +66,7 @@ def start(
     _require_google_configured(settings)
 
     state = secrets.token_urlsafe(24)
-    session.add(PendingAuthState(state=state))
+    session.add(PendingAuthState(state=state, client=client))
     session.commit()
 
     params = {
@@ -80,14 +83,15 @@ def start(
     return RedirectResponse(f"{_AUTH_ENDPOINT}?{urlencode(params)}")
 
 
-@router.get("/callback", response_class=HTMLResponse)
+@router.get("/callback")
 async def callback(
+    request: Request,
     code: str = Query(default=""),
     state: str = Query(default=""),
     error: str = Query(default=""),
     settings: Settings = Depends(get_settings),
     session: DbSession = Depends(get_session),
-) -> HTMLResponse:
+):
     if error:
         return _failure_page(f"Sign-in failed: {error}")
 
@@ -96,6 +100,7 @@ async def callback(
     pending = session.get(PendingAuthState, state)
     if pending is None:
         return _failure_page("Sign-in failed: invalid or expired request. Please try again from the app.")
+    is_web = pending.client == "web"
     session.delete(pending)
     session.commit()
 
@@ -172,6 +177,18 @@ async def callback(
     app_session = Session(user_id=user.id)
     session.add(app_session)
     session.commit()
+
+    if is_web:
+        response = RedirectResponse(url="/", status_code=http_status.HTTP_302_FOUND)
+        response.set_cookie(
+            key=SESSION_COOKIE_NAME,
+            value=app_session.token,
+            httponly=True,
+            secure=request.url.scheme == "https",
+            samesite="lax",
+            max_age=60 * 60 * 24 * 365,
+        )
+        return response
 
     return _success_page(app_session.token)
 

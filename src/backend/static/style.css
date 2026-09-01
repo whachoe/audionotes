@@ -1,0 +1,165 @@
+:root {
+  --navy: #09136C;
+  --red: #C40606;
+  --bg: #f6f4f0;
+  --surface: #ffffff;
+  --text: #1a1a1a;
+  --text-muted: #666;
+  --border: #ddd;
+  --radius: 10px;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  line-height: 1.5;
+}
+
+.brand-copywaste { color: var(--navy); }
+.brand-notes { color: var(--red); }
+
+a { color: var(--navy); text-decoration: none; }
+a:hover { text-decoration: underline; }
+
+.centered-page {
+  max-width: 420px;
+  margin: 15vh auto;
+  padding: 2rem;
+  text-align: center;
+}
+
+.button {
+  display: inline-block;
+  padding: 0.75rem 1.5rem;
+  border-radius: 999px;
+  font-weight: 600;
+  font-size: 1rem;
+  border: none;
+  cursor: pointer;
+}
+.button-primary {
+  background: var(--navy);
+  color: #fff;
+}
+.button-primary:hover { background: #0c1a8c; text-decoration: none; }
+
+.link-button {
+  background: none;
+  border: none;
+  color: var(--navy);
+  cursor: pointer;
+  font: inherit;
+  padding: 0;
+  text-decoration: underline;
+}
+
+.topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  padding: 1rem 1.25rem;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+}
+.topbar h1 { font-size: 1.25rem; margin: 0; }
+.account { display: flex; align-items: center; gap: 0.75rem; font-size: 0.9rem; color: var(--text-muted); }
+
+.back-link { font-weight: 600; }
+.detail-title { font-size: 1.1rem; margin: 0; }
+
+.record-section {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 1.25rem;
+  flex-wrap: wrap;
+}
+.record-btn {
+  padding: 0.9rem 1.75rem;
+  border-radius: 999px;
+  border: none;
+  font-size: 1rem;
+  font-weight: 600;
+  color: #fff;
+  background: var(--navy);
+  cursor: pointer;
+  min-width: 180px;
+}
+.record-btn[data-state="recording"] {
+  background: var(--red);
+}
+.record-btn:disabled { opacity: 0.6; cursor: default; }
+.record-timer {
+  font-variant-numeric: tabular-nums;
+  color: var(--red);
+  font-weight: 600;
+}
+.record-error { color: var(--red); font-size: 0.9rem; }
+
+.filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0 1.25rem 1rem;
+}
+.filters-label { font-weight: 600; color: var(--text-muted); }
+.filter-checkbox {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.95rem;
+}
+
+#notes-table-wrap { padding: 0 1.25rem 2rem; overflow-x: auto; }
+.notes-table { width: 100%; border-collapse: collapse; background: var(--surface); border-radius: var(--radius); overflow: hidden; }
+.notes-table th, .notes-table td { padding: 0.75rem; text-align: left; border-bottom: 1px solid var(--border); font-size: 0.95rem; }
+.notes-table th a { color: inherit; font-weight: 700; }
+.empty-row { text-align: center; color: var(--text-muted); padding: 2rem !important; }
+
+.status-select {
+  padding: 0.35rem 0.6rem;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  font-size: 0.85rem;
+  font-weight: 600;
+  background: #eee;
+}
+.status-open { background: #dbe7fb; }
+.status-in_progress { background: #fdecc8; }
+.status-todo { background: #ecdcf7; }
+.status-closed { background: #dcf0dc; }
+
+.detail-meta { display: flex; gap: 1rem; padding: 0 1.25rem; color: var(--text-muted); font-size: 0.9rem; flex-wrap: wrap; }
+.processing-note { padding: 0 1.25rem; color: var(--navy); }
+.processing-error { padding: 0 1.25rem; color: var(--red); }
+
+.status-form { padding: 1rem 1.25rem; }
+.status-form select { padding: 0.4rem 0.6rem; border-radius: 8px; border: 1px solid var(--border); }
+
+.audio-player { display: block; width: calc(100% - 2.5rem); margin: 0 1.25rem 1.5rem; }
+
+.transcript-form { padding: 0 1.25rem 2rem; display: flex; flex-direction: column; gap: 0.75rem; }
+.transcript-form textarea {
+  width: 100%;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.9rem;
+  padding: 0.75rem;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  resize: vertical;
+}
+.transcript-form .button { align-self: flex-start; }
+
+@media (max-width: 600px) {
+  .topbar { padding: 0.85rem 1rem; }
+  .record-section, .filters, #notes-table-wrap, .transcript-form, .detail-meta, .status-form { padding-left: 1rem; padding-right: 1rem; }
+  .notes-table th, .notes-table td { padding: 0.5rem; font-size: 0.85rem; }
+  .record-btn { min-width: 0; flex: 1; }
+}

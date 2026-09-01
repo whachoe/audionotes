@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+{% block title %}{{ row.title_display }} - Copywaste Notes{% endblock %}
+{% block content %}
+<header class="topbar">
+  <a href="/" class="back-link">&larr; Back</a>
+  <h1 class="detail-title">{{ row.title_display }}</h1>
+</header>
+
+<section class="detail-meta">
+  <span>{{ row.created_display }}</span>
+  <span>{{ row.duration_display }}</span>
+  {% if note.scheduled_at %}<span>Scheduled: {{ note.scheduled_at.strftime("%b %d, %H:%M") }}</span>{% endif %}
+</section>
+
+{% if note.processing_status.value != "done" %}
+<p class="processing-note">Processing ({{ note.processing_status.value }})&hellip;</p>
+{% endif %}
+{% if note.processing_error %}
+<p class="processing-error">Processing error: {{ note.processing_error }}</p>
+{% endif %}
+
+<form method="post" action="/notes/{{ note.id }}/status" class="status-form">
+  <label for="status-select">Status</label>
+  <select id="status-select" name="status" onchange="this.form.requestSubmit()">
+    {% for value, label in all_statuses %}
+    <option value="{{ value }}" {% if value == note.status.value %}selected{% endif %}>{{ label }}</option>
+    {% endfor %}
+  </select>
+</form>
+
+<audio controls preload="none" src="{{ audio_url }}" class="audio-player"></audio>
+
+<form method="post" action="/notes/{{ note.id }}/transcript" class="transcript-form">
+  <label for="markdown">Transcript (Markdown)</label>
+  <textarea id="markdown" name="markdown" rows="18">{{ transcript_markdown }}</textarea>
+  <button type="submit" class="button button-primary">Save</button>
+</form>
+{% endblock %}

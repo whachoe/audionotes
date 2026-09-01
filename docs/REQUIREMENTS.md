@@ -42,3 +42,4 @@ Also use that same login to link to Google Calendar.
 Now we want to have the same functionality as is in the Android app, but this time using only html and vanilla javascript. If partial page updates are necessary, use HTMX and serverside rendering on the backend for this. 
 Also use Google account to log into the frontend.
 Make sure this HTML-frontend is mobile-friendly.
+This should all be deployed to https://notes.copywaste.org

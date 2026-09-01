@@ -4,16 +4,22 @@ from __future__ import annotations
 import asyncio
 import logging
 from contextlib import asynccontextmanager
+from pathlib import Path
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
+from fastapi.responses import RedirectResponse
+from fastapi.staticfiles import StaticFiles
 
 from . import db
+from .auth import RequireLoginRedirect
 from .config import get_settings
-from .routers import google_auth, health, notes
+from .routers import google_auth, health, notes, web
 from .worker import recover_stuck_jobs, run_worker_loop
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+_BACKEND_DIR = Path(__file__).resolve().parent
 
 
 @asynccontextmanager
@@ -50,6 +56,13 @@ def create_app() -> FastAPI:
     app.include_router(health.router)
     app.include_router(notes.router, prefix="/api")
     app.include_router(google_auth.router, prefix="/api")
+    app.include_router(web.router)
+    app.mount("/static", StaticFiles(directory=str(_BACKEND_DIR / "static")), name="static")
+
+    @app.exception_handler(RequireLoginRedirect)
+    async def _redirect_to_login(request: Request, exc: RequireLoginRedirect) -> RedirectResponse:
+        return RedirectResponse(url="/login", status_code=302)
+
     return app
 
 

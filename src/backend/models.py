@@ -58,9 +58,15 @@ class PendingAuthState(SQLModel, table=True):
     """A short-lived CSRF token: created by GET /google/auth/start, consumed
     (and deleted) by GET /google/auth/callback. Not tied to a user yet -
     that's the whole point of a login flow.
+
+    client records which surface started the flow ("mobile" or "web") since
+    both share the same OAuth client/redirect URI (Phase 3.2) - the callback
+    needs it to decide between a deep-link response (mobile) or a session
+    cookie + redirect (web).
     """
 
     state: str = Field(primary_key=True)
+    client: str = Field(default="mobile")
     created_at: datetime = Field(default_factory=utcnow)
 
 

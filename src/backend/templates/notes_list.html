@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+{% block title %}Notes - Copywaste Notes{% endblock %}
+{% block content %}
+{% macro sort_link(field, label) %}
+{% set next_order = 'asc' if (sort_by == field and order == 'desc') else 'desc' %}
+<a href="/?sort_by={{ field }}&order={{ next_order }}&{{ filter_qs }}">{{ label }}{% if sort_by == field %} {{ '▲' if order == 'asc' else '▼' }}{% endif %}</a>
+{% endmacro %}
+
+<header class="topbar">
+  <h1><span class="brand-copywaste">Copywaste</span> <span class="brand-notes">Notes</span></h1>
+  <div class="account">
+    <span>{{ user.email }}</span>
+    <form method="post" action="/logout"><button type="submit" class="link-button">Sign out</button></form>
+  </div>
+</header>
+
+<section class="record-section">
+  <button id="record-btn" type="button" class="record-btn" data-state="idle">Start Recording</button>
+  <span id="record-timer" class="record-timer"></span>
+  <span id="record-error" class="record-error" role="alert"></span>
+</section>
+
+<form id="filter-form" method="get" action="/" class="filters">
+  <input type="hidden" name="filter_submitted" value="1">
+  <input type="hidden" name="sort_by" value="{{ sort_by }}">
+  <input type="hidden" name="order" value="{{ order }}">
+  <span class="filters-label">Show:</span>
+  {% for value, label in all_statuses %}
+  <label class="filter-checkbox">
+    <input type="checkbox" name="status" value="{{ value }}"
+      {% if value in enabled_statuses %}checked{% endif %}
+      onchange="this.form.requestSubmit()">
+    {{ label }}
+  </label>
+  {% endfor %}
+</form>
+
+<div id="notes-table-wrap">
+  <table class="notes-table">
+    <thead>
+      <tr>
+        <th>{{ sort_link("created_at", "Created") }}</th>
+        <th>Title</th>
+        <th>{{ sort_link("duration_seconds", "Duration") }}</th>
+        <th>{{ sort_link("status", "Status") }}</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% if rows %}
+        {% for note in rows %}
+          {% include "partials/note_row.html" %}
+        {% endfor %}
+      {% else %}
+        <tr><td colspan="4" class="empty-row">No notes match the current filter.</td></tr>
+      {% endif %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

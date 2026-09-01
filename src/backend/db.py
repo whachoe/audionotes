@@ -96,13 +96,24 @@ def _add_missing_columns(engine: Engine) -> None:
     additive_columns = [
         ("note", "scheduled_at", "TIMESTAMP"),
         ("note", "user_id", "VARCHAR"),
+        # pendingauthstate already shipped (Phase 3.1) without `client` -
+        # added in Phase 3.2 for the web frontend's login flow.
+        ("pendingauthstate", "client", "VARCHAR"),
     ]
     with engine.connect() as conn:
+        existing_tables = {
+            row[0]
+            for row in conn.exec_driver_sql("SELECT name FROM sqlite_master WHERE type='table'").fetchall()
+        }
         for table_name, column_name, column_type in additive_columns:
-            existing = {
+            if table_name not in existing_tables:
+                # Nothing to migrate - create_all() creates brand-new tables
+                # (with every current column already) on its own.
+                continue
+            existing_columns = {
                 row[1] for row in conn.exec_driver_sql(f"PRAGMA table_info({table_name})").fetchall()
             }
-            if column_name not in existing:
+            if column_name not in existing_columns:
                 conn.exec_driver_sql(f"ALTER TABLE {table_name} ADD COLUMN {column_name} {column_type}")
         conn.commit()
 
