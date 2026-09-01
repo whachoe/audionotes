@@ -50,7 +50,7 @@ def env_setup(tmp_path, monkeypatch):
     monkeypatch.setenv("POLL_INTERVAL_SECONDS", "3600")
     monkeypatch.setenv("WHISPER_MODEL_SIZE", "tiny")
     monkeypatch.setenv("OLLAMA_BASE_URL", "http://localhost:11434")
-    monkeypatch.setenv("OLLAMA_MODEL", "llama3.2:3b")
+    monkeypatch.setenv("OLLAMA_MODEL", "llama3.1:8b")
 
     reset_settings_cache()
     db.reset_engine()

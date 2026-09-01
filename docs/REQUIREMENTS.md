@@ -31,3 +31,14 @@
   Make it possible for the user to link their Google Calendar to the backend. We want the backend to recognize dates/times and schedule an event in the google calendar.
   #### 2.1.2. Extra Datetime field
   When the backend recognizes a date/time, it also creates a new Datetime field `scheduledAt`. 
+
+3. Phase 3
+==========
+### 3.1 Make the app and backend Multi-user
+Log into the app using your Google account. Make sure the backend saves all data linked to that user. 
+Also use that same login to link to Google Calendar. 
+
+### 3.2 New HTML frontend
+Now we want to have the same functionality as is in the Android app, but this time using only html and vanilla javascript. If partial page updates are necessary, use HTMX and serverside rendering on the backend for this. 
+Also use Google account to log into the frontend.
+Make sure this HTML-frontend is mobile-friendly.

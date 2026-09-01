@@ -23,7 +23,7 @@ Environment=WHISPER_MODEL_SIZE=small
 Environment=WHISPER_DEVICE=cpu
 Environment=WHISPER_COMPUTE_TYPE=int8
 Environment=OLLAMA_BASE_URL=http://127.0.0.1:11434
-Environment=OLLAMA_MODEL=llama3.2:3b
+Environment=OLLAMA_MODEL=qwen2.5:14b
 
 # Google Calendar linking (Phase 2, optional) - uncomment and fill in once you
 # have an OAuth 2.0 "Web application" client (Google Cloud Console, Calendar
