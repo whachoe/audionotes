@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import shutil
+from datetime import datetime
 from pathlib import Path
+from typing import Optional, Tuple
 
 import pytest
 from fastapi.testclient import TestClient
@@ -25,11 +27,13 @@ def patch_services(monkeypatch):
     def fake_transcribe(path: str) -> str:
         return FAKE_TRANSCRIPT
 
-    async def fake_generate_title(transcript: str) -> str:
-        return FAKE_TITLE
+    async def fake_generate_title_and_schedule(
+        transcript: str, reference_time: datetime
+    ) -> Tuple[str, Optional[datetime]]:
+        return FAKE_TITLE, None
 
     monkeypatch.setattr(transcription, "transcribe_audio", fake_transcribe)
-    monkeypatch.setattr(summarization, "generate_title", fake_generate_title)
+    monkeypatch.setattr(summarization, "generate_title_and_schedule", fake_generate_title_and_schedule)
 
 
 @pytest.fixture

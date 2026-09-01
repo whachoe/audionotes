@@ -45,6 +45,7 @@ def _to_list_item(note: Note) -> NoteListItem:
         processing_status=note.processing_status,
         duration_seconds=note.duration_seconds,
         audio_url=_audio_url(note.id),
+        scheduled_at=note.scheduled_at,
     )
 
 
@@ -59,6 +60,7 @@ def _to_detail(note: Note) -> NoteDetail:
         processing_status=note.processing_status,
         duration_seconds=note.duration_seconds,
         audio_url=_audio_url(note.id),
+        scheduled_at=note.scheduled_at,
         transcript_markdown=transcript_markdown,
         processing_error=note.processing_error,
         audio_original_filename=note.audio_original_filename,

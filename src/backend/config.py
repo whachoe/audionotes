@@ -27,6 +27,15 @@ class Settings(BaseSettings):
     # Background worker poll interval, in seconds.
     POLL_INTERVAL_SECONDS: float = 2.0
 
+    # Google Calendar linking (Phase 2). Leave blank to disable the feature
+    # entirely - GOOGLE_REDIRECT_URI must exactly match a redirect URI
+    # registered on the OAuth client in Google Cloud Console, e.g.
+    # "https://notes.example.com/api/google/auth/callback".
+    GOOGLE_CLIENT_ID: str = ""
+    GOOGLE_CLIENT_SECRET: str = ""
+    GOOGLE_REDIRECT_URI: str = ""
+    GOOGLE_CALENDAR_ID: str = "primary"
+
 
 @lru_cache
 def get_settings() -> Settings:

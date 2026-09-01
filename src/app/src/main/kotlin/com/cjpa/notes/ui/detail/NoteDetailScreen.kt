@@ -99,6 +99,13 @@ fun NoteDetailScreen(
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
+                uiState.scheduledAtMs?.let { scheduledAtMs ->
+                    Text(
+                        text = "Scheduled: ${formatTimestamp(scheduledAtMs)}",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                }
                 if (uiState.processingStatus != "done") {
                     Text(
                         text = "Processing (${uiState.processingStatus})…",

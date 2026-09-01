@@ -3,6 +3,7 @@ package com.cjpa.notes.di
 import android.content.Context
 import androidx.room.Room
 import com.cjpa.notes.data.local.AppDatabase
+import com.cjpa.notes.data.local.MIGRATION_1_2
 import com.cjpa.notes.data.local.NotesDao
 import dagger.Module
 import dagger.Provides
@@ -18,7 +19,9 @@ object DatabaseModule {
     @Provides
     @Singleton
     fun provideAppDatabase(@ApplicationContext context: Context): AppDatabase =
-        Room.databaseBuilder(context, AppDatabase::class.java, "notes.db").build()
+        Room.databaseBuilder(context, AppDatabase::class.java, "notes.db")
+            .addMigrations(MIGRATION_1_2)
+            .build()
 
     @Provides
     @Singleton

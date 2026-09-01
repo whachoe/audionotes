@@ -14,7 +14,7 @@ from sqlmodel import Session, select
 
 from . import storage
 from .models import Note, ProcessingStatus
-from .services import summarization, transcription
+from .services import google_calendar, summarization, transcription
 from .services.markdown_builder import build_markdown
 
 logger = logging.getLogger(__name__)
@@ -99,16 +99,27 @@ async def process_next_note(session_factory) -> Optional[str]:
         session.add(note)
         session.commit()
         original_filename = note.audio_original_filename or note.audio_filename
+        created_at = note.created_at
     finally:
         session.close()
 
-    # --- Summarization (non-fatal on failure; falls back internally) ---
+    # --- Summarization + date/time recognition (non-fatal on failure; falls back internally) ---
     try:
-        title = await summarization.generate_title(transcript_text)
+        title, scheduled_at = await summarization.generate_title_and_schedule(transcript_text, created_at)
     except Exception:  # noqa: BLE001 - summarization must never fail the note
         logger.exception("Unexpected error generating title for note %s", note_id)
         words = transcript_text.strip().split()
         title = " ".join(words[:10]) if words else "Untitled note"
+        scheduled_at = None
+
+    # --- Calendar event (Phase 2; non-fatal, and a silent no-op if not linked) ---
+    if scheduled_at is not None:
+        try:
+            await google_calendar.maybe_create_event(
+                title=title, scheduled_at=scheduled_at, description=transcript_text[:500]
+            )
+        except Exception:  # noqa: BLE001 - a calendar failure must never fail the note
+            logger.exception("Calendar event creation failed for note %s", note_id)
 
     markdown_content = build_markdown(
         title=title,
@@ -123,6 +134,7 @@ async def process_next_note(session_factory) -> Optional[str]:
         note = session.get(Note, note_id)
         if note is not None:
             note.title = title
+            note.scheduled_at = scheduled_at
             note.transcript_path = transcript_path
             note.processing_status = ProcessingStatus.done
             session.add(note)

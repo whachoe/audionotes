@@ -18,6 +18,7 @@ class NoteListItem(BaseModel):
     processing_status: ProcessingStatus
     duration_seconds: Optional[float] = None
     audio_url: str
+    scheduled_at: Optional[datetime] = None
 
 
 class NoteDetail(NoteListItem):

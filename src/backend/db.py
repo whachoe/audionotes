@@ -60,8 +60,30 @@ def reset_engine() -> None:
     _engine = None
 
 
+def _add_missing_columns(engine: Engine) -> None:
+    """SQLModel.metadata.create_all only creates missing *tables* - it never
+    alters an already-existing one. This adds any columns a model has grown
+    since a table was first created, so upgrading in place (a live server
+    with real notes already in it) doesn't break on missing columns.
+    """
+    # (table_name, column_name, column_type_for_ALTER_TABLE)
+    additive_columns = [
+        ("note", "scheduled_at", "TIMESTAMP"),
+    ]
+    with engine.connect() as conn:
+        for table_name, column_name, column_type in additive_columns:
+            existing = {
+                row[1] for row in conn.exec_driver_sql(f"PRAGMA table_info({table_name})").fetchall()
+            }
+            if column_name not in existing:
+                conn.exec_driver_sql(f"ALTER TABLE {table_name} ADD COLUMN {column_name} {column_type}")
+        conn.commit()
+
+
 def init_db() -> None:
-    SQLModel.metadata.create_all(get_engine())
+    engine = get_engine()
+    SQLModel.metadata.create_all(engine)
+    _add_missing_columns(engine)
 
 
 def get_session() -> Iterator[Session]:

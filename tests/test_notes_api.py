@@ -193,6 +193,7 @@ def test_list_default_returns_metadata_only(client, auth_headers):
         "processing_status",
         "duration_seconds",
         "audio_url",
+        "scheduled_at",
     }
 
 

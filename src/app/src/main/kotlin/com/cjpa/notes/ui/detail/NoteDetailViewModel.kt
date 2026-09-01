@@ -37,6 +37,7 @@ data class NoteDetailUiState(
     val isSaving: Boolean = false,
     val errorMessage: String? = null,
     val audioUrl: String? = null,
+    val scheduledAtMs: Long? = null,
     val isPlaying: Boolean = false,
     val isPlayerPreparing: Boolean = false,
     val playbackPositionMs: Long = 0L,
@@ -81,7 +82,8 @@ class NoteDetailViewModel @Inject constructor(
                         processingStatus = entity.processingStatus,
                         processingError = entity.processingError,
                         markdown = if (isDirty) current.markdown else entity.transcriptMd.orEmpty(),
-                        audioUrl = entity.audioUrl
+                        audioUrl = entity.audioUrl,
+                        scheduledAtMs = entity.scheduledAt
                     )
                 }
             }
