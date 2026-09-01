@@ -1,10 +1,18 @@
 #!/usr/bin/env bash
-# End-to-end smoke test against a running cjpa's Notes backend instance.
+# End-to-end smoke test against a running Copywaste Notes backend instance.
+#
+# Phase 3 (multi-user): there's no static API token anymore - auth is a real
+# per-user session token, minted at the end of the Google sign-in flow. Get
+# one by signing into the app once, then either:
+#   - reading it out of Settings (if you add a debug display for it), or
+#   - completing GET {BASE_URL}/api/google/auth/start in a browser yourself
+#     and copying the `token` query param off the copywastenotes://auth
+#     redirect it ends on.
 #
 # Usage:
-#   scripts/smoke_test.sh [BASE_URL] [API_TOKEN]
+#   scripts/smoke_test.sh [BASE_URL] [SESSION_TOKEN]
 # or via env vars:
-#   BASE_URL=https://notes.example.com API_TOKEN=secret scripts/smoke_test.sh
+#   BASE_URL=https://notes.example.com SESSION_TOKEN=... scripts/smoke_test.sh
 #
 # Requires: curl, python3 (used only for JSON parsing, not to run the app).
 set -euo pipefail
@@ -12,15 +20,15 @@ set -euo pipefail
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 BASE_URL="${1:-${BASE_URL:-http://localhost:8000}}"
-API_TOKEN="${2:-${API_TOKEN:-}}"
+SESSION_TOKEN="${2:-${SESSION_TOKEN:-}}"
 SAMPLE_FILE="${SAMPLE_FILE:-${repo_root}/tests/fixtures/sample.wav}"
 POLL_ATTEMPTS="${POLL_ATTEMPTS:-60}"
 POLL_DELAY_SECONDS="${POLL_DELAY_SECONDS:-2}"
 
 BASE_URL="${BASE_URL%/}"
 
-if [[ -z "$API_TOKEN" ]]; then
-  echo "ERROR: API_TOKEN must be provided (2nd arg, or API_TOKEN env var)." >&2
+if [[ -z "$SESSION_TOKEN" ]]; then
+  echo "ERROR: SESSION_TOKEN must be provided (2nd arg, or SESSION_TOKEN env var). See the comment above for how to get one." >&2
   exit 1
 fi
 
@@ -29,7 +37,7 @@ if [[ ! -f "$SAMPLE_FILE" ]]; then
   exit 1
 fi
 
-AUTH_HEADER="Authorization: Bearer ${API_TOKEN}"
+AUTH_HEADER="Authorization: Bearer ${SESSION_TOKEN}"
 
 pass() { echo "  PASS: $1"; }
 fail() { echo "  FAIL: $1" >&2; exit 1; }

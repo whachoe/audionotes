@@ -18,6 +18,7 @@ PROTECTED_ROUTES = [
     ("PUT", "/api/notes/some-id/transcript"),
     ("GET", "/api/notes/some-id/audio"),
     ("GET", "/api/google/auth/status"),
+    ("POST", "/api/google/auth/logout"),
 ]
 
 

@@ -69,6 +69,7 @@ def _add_missing_columns(engine: Engine) -> None:
     # (table_name, column_name, column_type_for_ALTER_TABLE)
     additive_columns = [
         ("note", "scheduled_at", "TIMESTAMP"),
+        ("note", "user_id", "VARCHAR"),
     ]
     with engine.connect() as conn:
         for table_name, column_name, column_type in additive_columns:

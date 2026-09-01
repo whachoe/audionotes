@@ -29,10 +29,22 @@
         <activity
             android:name=".MainActivity"
             android:exported="true"
+            android:launchMode="singleTask"
             android:theme="@style/Theme.CjpasNotes">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+            <!-- Google sign-in callback (Phase 3): the backend's OAuth
+                 callback redirects here with a session token once you've
+                 signed in. singleTask above (rather than the default) means
+                 this reuses the running activity via onNewIntent() instead
+                 of spawning a duplicate on top of it. -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="copywastenotes" android:host="auth" />
             </intent-filter>
         </activity>
 

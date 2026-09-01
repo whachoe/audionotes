@@ -46,7 +46,7 @@ async def lifespan(app: FastAPI):
 
 
 def create_app() -> FastAPI:
-    app = FastAPI(title="cjpa's Notes", lifespan=lifespan)
+    app = FastAPI(title="Copywaste Notes", lifespan=lifespan)
     app.include_router(health.router)
     app.include_router(notes.router, prefix="/api")
     app.include_router(google_auth.router, prefix="/api")

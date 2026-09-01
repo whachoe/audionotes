@@ -115,8 +115,9 @@ def test_put_transcript_persists_to_file_and_db(client, auth_headers, env_setup)
         assert note.transcript_path == f"notes/{note_id}.md"
 
 
-def _seed_note(session: Session, **overrides) -> Note:
+def _seed_note(session: Session, user_id: str, **overrides) -> Note:
     defaults = dict(
+        user_id=user_id,
         audio_filename="x.wav",
         audio_original_filename="x.wav",
         audio_mime_type="audio/wav",
@@ -132,12 +133,12 @@ def _seed_note(session: Session, **overrides) -> Note:
     return note
 
 
-def test_list_sort_by_duration_seconds(client, auth_headers):
+def test_list_sort_by_duration_seconds(client, auth_headers, test_user):
     now = datetime.now(timezone.utc)
     with db.session_scope() as session:
-        _seed_note(session, duration_seconds=5.0, created_at=now, title="five")
-        _seed_note(session, duration_seconds=1.0, created_at=now, title="one")
-        _seed_note(session, duration_seconds=3.0, created_at=now, title="three")
+        _seed_note(session, test_user.id, duration_seconds=5.0, created_at=now, title="five")
+        _seed_note(session, test_user.id, duration_seconds=1.0, created_at=now, title="one")
+        _seed_note(session, test_user.id, duration_seconds=3.0, created_at=now, title="three")
 
     response = client.get("/api/notes?sort_by=duration_seconds&order=asc", headers=auth_headers)
     assert response.status_code == 200
@@ -149,12 +150,12 @@ def test_list_sort_by_duration_seconds(client, auth_headers):
     assert durations_desc == [5.0, 3.0, 1.0]
 
 
-def test_list_sort_by_created_at(client, auth_headers):
+def test_list_sort_by_created_at(client, auth_headers, test_user):
     base = datetime.now(timezone.utc)
     with db.session_scope() as session:
-        _seed_note(session, created_at=base, title="oldest")
-        _seed_note(session, created_at=base + timedelta(minutes=5), title="middle")
-        _seed_note(session, created_at=base + timedelta(minutes=10), title="newest")
+        _seed_note(session, test_user.id, created_at=base, title="oldest")
+        _seed_note(session, test_user.id, created_at=base + timedelta(minutes=5), title="middle")
+        _seed_note(session, test_user.id, created_at=base + timedelta(minutes=10), title="newest")
 
     response = client.get("/api/notes?sort_by=created_at&order=desc", headers=auth_headers)
     titles = [item["title"] for item in response.json()]
@@ -165,12 +166,12 @@ def test_list_sort_by_created_at(client, auth_headers):
     assert titles_asc == ["oldest", "middle", "newest"]
 
 
-def test_list_sort_by_status(client, auth_headers):
+def test_list_sort_by_status(client, auth_headers, test_user):
     now = datetime.now(timezone.utc)
     with db.session_scope() as session:
-        _seed_note(session, created_at=now, status=NoteStatus.todo, title="a")
-        _seed_note(session, created_at=now, status=NoteStatus.closed, title="b")
-        _seed_note(session, created_at=now, status=NoteStatus.open, title="c")
+        _seed_note(session, test_user.id, created_at=now, status=NoteStatus.todo, title="a")
+        _seed_note(session, test_user.id, created_at=now, status=NoteStatus.closed, title="b")
+        _seed_note(session, test_user.id, created_at=now, status=NoteStatus.open, title="c")
 
     response = client.get("/api/notes?sort_by=status&order=asc", headers=auth_headers)
     statuses = [item["status"] for item in response.json()]
@@ -195,6 +196,38 @@ def test_list_default_returns_metadata_only(client, auth_headers):
         "audio_url",
         "scheduled_at",
     }
+
+
+def test_another_users_note_is_invisible(client, auth_headers, test_user):
+    """Phase 3 (multi-user): a note belongs to exactly one account - another
+    signed-in user must get 404, not someone else's data."""
+    from backend.models import Session as AppSession
+    from backend.models import User
+
+    with db.session_scope() as session:
+        other_user = User(google_sub="other-sub", email="other@example.com")
+        session.add(other_user)
+        session.commit()
+        session.refresh(other_user)
+        other_note = _seed_note(session, other_user.id, title="not yours")
+        other_note_id = other_note.id
+
+        other_session = AppSession(user_id=other_user.id)
+        session.add(other_session)
+        session.commit()
+        other_headers = {"Authorization": f"Bearer {other_session.token}"}
+
+    # The note's actual owner can see it.
+    own_view = client.get(f"/api/notes/{other_note_id}", headers=other_headers)
+    assert own_view.status_code == 200
+
+    # The test_user (a different account) cannot.
+    response = client.get(f"/api/notes/{other_note_id}", headers=auth_headers)
+    assert response.status_code == 404
+
+    # And it never shows up in test_user's list either.
+    list_response = client.get("/api/notes", headers=auth_headers)
+    assert other_note_id not in {item["id"] for item in list_response.json()}
 
 
 def test_get_audio_streams_bytes(client, auth_headers, sample_wav_bytes):

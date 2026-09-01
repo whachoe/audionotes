@@ -17,7 +17,6 @@ User=audionotes
 Group=audionotes
 
 Environment=PYTHONUNBUFFERED=1
-Environment=API_TOKEN=changeme
 Environment=DATA_DIR=/var/lib/audionotes
 Environment=WHISPER_MODEL_SIZE=small
 Environment=WHISPER_DEVICE=cpu
@@ -25,14 +24,16 @@ Environment=WHISPER_COMPUTE_TYPE=int8
 Environment=OLLAMA_BASE_URL=http://127.0.0.1:11434
 Environment=OLLAMA_MODEL=qwen2.5:14b
 
-# Google Calendar linking (Phase 2, optional) - uncomment and fill in once you
-# have an OAuth 2.0 "Web application" client (Google Cloud Console, Calendar
-# API enabled). GOOGLE_REDIRECT_URI must exactly match that client's
-# registered redirect URI.
-#Environment=GOOGLE_CLIENT_ID=
-#Environment=GOOGLE_CLIENT_SECRET=
-#Environment=GOOGLE_REDIRECT_URI=https://notes.copywaste.org/api/google/auth/callback
-#Environment=GOOGLE_CALENDAR_ID=primary
+# Google sign-in + Calendar linking (Phase 3) - required now: there is no
+# other way to log in. Needs an OAuth 2.0 "Web application" client (Google
+# Cloud Console, Calendar API enabled). GOOGLE_REDIRECT_URI must exactly
+# match that client's registered redirect URI. ALLOWED_GOOGLE_EMAILS is a
+# comma-separated allow-list - only these accounts can sign in.
+Environment=GOOGLE_CLIENT_ID=
+Environment=GOOGLE_CLIENT_SECRET=
+Environment=GOOGLE_REDIRECT_URI=https://notes.copywaste.org/api/google/auth/callback
+Environment=GOOGLE_CALENDAR_ID=primary
+Environment=ALLOWED_GOOGLE_EMAILS=whachoe@gmail.com,jo.giraerts@gmail.com,cuppens.katrien@gmail.com
 
 [Install]
 WantedBy=multi-user.target

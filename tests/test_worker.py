@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 import pytest
 
 from backend import db, storage, worker
-from backend.models import Note, ProcessingStatus
+from backend.models import Note, ProcessingStatus, User
 from backend.services import google_calendar, summarization, transcription
 
 from tests.conftest import FAKE_TITLE, FAKE_TRANSCRIPT, SAMPLE_WAV
@@ -20,8 +20,9 @@ def worker_db(env_setup):
     yield env_setup
 
 
-def _seed_queued_note(data_dir) -> Note:
+def _seed_queued_note(data_dir, user_id: str | None = None) -> Note:
     note = Note(
+        user_id=user_id,
         audio_filename="note.wav",
         audio_original_filename="note.wav",
         audio_mime_type="audio/wav",
@@ -39,6 +40,15 @@ def _seed_queued_note(data_dir) -> Note:
 
     with db.session_scope() as session:
         return session.get(Note, note_id)
+
+
+def _seed_user(google_sub: str = "worker-test-sub", email: str = "worker-test@example.com") -> str:
+    with db.session_scope() as session:
+        user = User(google_sub=google_sub, email=email)
+        session.add(user)
+        session.commit()
+        session.refresh(user)
+        return user.id
 
 
 @pytest.mark.asyncio
@@ -133,27 +143,63 @@ async def test_recognized_schedule_is_saved_on_the_note(worker_db, monkeypatch):
 
 @pytest.mark.asyncio
 async def test_calendar_failure_does_not_fail_the_note(worker_db, monkeypatch):
-    """A recognized schedule with no Google account linked (or a Calendar API
-    error) must still leave the note done, not failed - worker.py wraps the
-    calendar call defensively."""
-    note = _seed_queued_note(worker_db)
+    """A recognized schedule with a Calendar API error must still leave the
+    note done, not failed - worker.py wraps the calendar call defensively.
+    Uses a fake user_id so the (mocked) calendar call path is actually
+    exercised - a note with no owner is never even attempted (see the
+    user_id is not None guard in worker.py), which is covered separately by
+    test_happy_path_queued_to_done seeding an ownerless note."""
+    user_id = _seed_user()
+    note = _seed_queued_note(worker_db, user_id=user_id)
     scheduled = datetime(2026, 9, 5, 14, 0, tzinfo=timezone.utc)
+    calendar_called = False
 
     async def fake_with_schedule(transcript: str, reference_time: datetime):
         return FAKE_TITLE, scheduled
 
     async def boom_calendar(*args, **kwargs):
+        nonlocal calendar_called
+        calendar_called = True
         raise RuntimeError("calendar API exploded")
 
     monkeypatch.setattr(summarization, "generate_title_and_schedule", fake_with_schedule)
     monkeypatch.setattr(google_calendar, "maybe_create_event", boom_calendar)
 
     processed_id = await worker.process_next_note(db.session_scope)
+    assert calendar_called
     assert processed_id == note.id
 
     with db.session_scope() as session:
         refreshed = session.get(Note, note.id)
         assert refreshed.processing_status == ProcessingStatus.done
+        assert refreshed.scheduled_at == scheduled.replace(tzinfo=None)
+
+
+@pytest.mark.asyncio
+async def test_ownerless_note_never_attempts_calendar(worker_db, monkeypatch):
+    """A pre-Phase-3 note with no owner (user_id is None) can still recognize
+    a schedule, but there's no linked Google account to create an event for -
+    the calendar call must not even be attempted."""
+    note = _seed_queued_note(worker_db)  # user_id defaults to None
+    scheduled = datetime(2026, 9, 5, 14, 0, tzinfo=timezone.utc)
+    calendar_called = False
+
+    async def fake_with_schedule(transcript: str, reference_time: datetime):
+        return FAKE_TITLE, scheduled
+
+    async def spy_calendar(*args, **kwargs):
+        nonlocal calendar_called
+        calendar_called = True
+
+    monkeypatch.setattr(summarization, "generate_title_and_schedule", fake_with_schedule)
+    monkeypatch.setattr(google_calendar, "maybe_create_event", spy_calendar)
+
+    processed_id = await worker.process_next_note(db.session_scope)
+    assert processed_id == note.id
+    assert not calendar_called
+
+    with db.session_scope() as session:
+        refreshed = session.get(Note, note.id)
         assert refreshed.scheduled_at == scheduled.replace(tzinfo=None)
 
 

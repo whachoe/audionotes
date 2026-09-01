@@ -1,22 +1,29 @@
-"""Bearer-token auth dependency."""
+"""Bearer-token auth: resolves a Session token to its User (Phase 3)."""
 from __future__ import annotations
-
-import secrets
 
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from sqlmodel import Session as DbSession
 
-from .config import Settings, get_settings
+from .db import get_session
+from .models import Session, User
 
-_bearer_scheme = HTTPBearer(auto_error=False)
+bearer_scheme = HTTPBearer(auto_error=False)
 
 
-def require_bearer_token(
-    credentials: HTTPAuthorizationCredentials = Depends(_bearer_scheme),
-    settings: Settings = Depends(get_settings),
-) -> None:
+def require_user(
+    credentials: HTTPAuthorizationCredentials = Depends(bearer_scheme),
+    db: DbSession = Depends(get_session),
+) -> User:
     if credentials is None or not credentials.credentials:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Missing bearer token")
 
-    if not secrets.compare_digest(credentials.credentials, settings.API_TOKEN):
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid bearer token")
+    session_row = db.get(Session, credentials.credentials)
+    if session_row is None:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or expired session")
+
+    user = db.get(User, session_row.user_id)
+    if user is None:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or expired session")
+
+    return user

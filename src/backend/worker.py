@@ -100,6 +100,7 @@ async def process_next_note(session_factory) -> Optional[str]:
         session.commit()
         original_filename = note.audio_original_filename or note.audio_filename
         created_at = note.created_at
+        user_id = note.user_id
     finally:
         session.close()
 
@@ -112,11 +113,11 @@ async def process_next_note(session_factory) -> Optional[str]:
         title = " ".join(words[:10]) if words else "Untitled note"
         scheduled_at = None
 
-    # --- Calendar event (Phase 2; non-fatal, and a silent no-op if not linked) ---
-    if scheduled_at is not None:
+    # --- Calendar event (Phase 2/3; non-fatal, and a silent no-op if not linked) ---
+    if scheduled_at is not None and user_id is not None:
         try:
             await google_calendar.maybe_create_event(
-                title=title, scheduled_at=scheduled_at, description=transcript_text[:500]
+                user_id=user_id, title=title, scheduled_at=scheduled_at, description=transcript_text[:500]
             )
         except Exception:  # noqa: BLE001 - a calendar failure must never fail the note
             logger.exception("Calendar event creation failed for note %s", note_id)

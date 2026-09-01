@@ -11,6 +11,8 @@ from fastapi.testclient import TestClient
 from backend import db
 from backend.config import reset_settings_cache
 from backend.main import create_app
+from backend.models import Session as AppSession
+from backend.models import User
 from backend.services import summarization, transcription
 
 FIXTURES_DIR = Path(__file__).parent / "fixtures"
@@ -38,14 +40,13 @@ def patch_services(monkeypatch):
 
 @pytest.fixture
 def env_setup(tmp_path, monkeypatch):
-    """Point the app at a throwaway DATA_DIR + sqlite db, with a known API token.
+    """Point the app at a throwaway DATA_DIR + sqlite db.
 
     POLL_INTERVAL_SECONDS is set very high so the background worker (started by
     the app's lifespan) does not race API-level assertions about a note being
     freshly "queued".
     """
     data_dir = tmp_path / "data"
-    monkeypatch.setenv("API_TOKEN", "test-token")
     monkeypatch.setenv("DATA_DIR", str(data_dir))
     monkeypatch.setenv("POLL_INTERVAL_SECONDS", "3600")
     monkeypatch.setenv("WHISPER_MODEL_SIZE", "tiny")
@@ -69,8 +70,24 @@ def client(env_setup):
 
 
 @pytest.fixture
-def auth_headers():
-    return {"Authorization": "Bearer test-token"}
+def test_user(client) -> User:
+    """A signed-in user for tests to act as (Phase 3: multi-user)."""
+    with db.session_scope() as session:
+        user = User(google_sub="test-google-sub", email="test@example.com", name="Test User")
+        session.add(user)
+        session.commit()
+        session.refresh(user)
+        return user
+
+
+@pytest.fixture
+def auth_headers(test_user):
+    with db.session_scope() as session:
+        app_session = AppSession(user_id=test_user.id)
+        session.add(app_session)
+        session.commit()
+        session.refresh(app_session)
+        return {"Authorization": f"Bearer {app_session.token}"}
 
 
 @pytest.fixture

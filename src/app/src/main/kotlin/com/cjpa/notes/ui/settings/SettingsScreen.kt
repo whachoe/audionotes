@@ -2,6 +2,7 @@ package com.cjpa.notes.ui.settings
 
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -16,6 +17,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -25,6 +27,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -34,7 +37,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.KeyboardType
-import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.Lifecycle
@@ -58,12 +60,20 @@ fun SettingsScreen(
         }
     }
 
-    // Re-check the Google link status whenever the user comes back from the
-    // browser (Google's consent screen, or our "linked" result page).
+    LaunchedEffect(uiState.errorMessage) {
+        val message = uiState.errorMessage
+        if (message != null) {
+            snackbarHostState.showSnackbar(message)
+            viewModel.errorMessageShown()
+        }
+    }
+
+    // Re-check sign-in/Calendar status whenever the user comes back from the
+    // browser (Google's consent screen, or our "signed in" result page).
     val lifecycleOwner = LocalLifecycleOwner.current
     DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
-            if (event == Lifecycle.Event.ON_RESUME) viewModel.refreshGoogleLinkStatus()
+            if (event == Lifecycle.Event.ON_RESUME) viewModel.refreshStatus()
         }
         lifecycleOwner.lifecycle.addObserver(observer)
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
@@ -90,9 +100,8 @@ fun SettingsScreen(
                 .verticalScroll(rememberScrollState())
         ) {
             Text(
-                text = "Enter the base URL and bearer token for your Copywaste Notes backend.",
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+                text = "Server",
+                style = MaterialTheme.typography.titleSmall
             )
             Spacer16()
             OutlinedTextField(
@@ -104,17 +113,64 @@ fun SettingsScreen(
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri),
                 modifier = Modifier.fillMaxWidth()
             )
+
             Spacer16()
-            OutlinedTextField(
-                value = uiState.apiToken,
-                onValueChange = viewModel::onApiTokenChanged,
-                label = { Text("API token") },
-                singleLine = true,
-                visualTransformation = PasswordVisualTransformation(),
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
-                modifier = Modifier.fillMaxWidth()
+            HorizontalDivider()
+            Spacer16()
+
+            Text(
+                text = "Account",
+                style = MaterialTheme.typography.titleSmall
+            )
+            Text(
+                text = "Signing in with Google also connects Google Calendar - a note " +
+                    "that mentions a date or time can get a matching event added automatically.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
             )
             Spacer16()
+            if (uiState.isSignedIn) {
+                Column {
+                    Text(
+                        text = uiState.signedInEmail ?: "Signed in",
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        when {
+                            uiState.isCheckingStatus -> CircularProgressIndicator(modifier = Modifier.height(16.dp))
+                            uiState.calendarLinked -> Text(
+                                "Calendar connected",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                            else -> Text(
+                                "Calendar not connected",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                    Spacer16()
+                    Row {
+                        OutlinedButton(onClick = viewModel::signIn) {
+                            Text("Re-connect")
+                        }
+                        Spacer(Modifier.width(12.dp))
+                        TextButton(onClick = viewModel::signOut) {
+                            Text("Sign out")
+                        }
+                    }
+                }
+            } else {
+                Button(onClick = viewModel::signIn, enabled = uiState.baseUrl.isNotBlank()) {
+                    Text("Sign in with Google")
+                }
+            }
+
+            Spacer16()
+            HorizontalDivider()
+            Spacer16()
+
             Text(
                 text = "Show statuses",
                 style = MaterialTheme.typography.titleSmall
@@ -133,37 +189,7 @@ fun SettingsScreen(
                     Text(status.displayLabel)
                 }
             }
-            Spacer16()
-            Text(
-                text = "Google Calendar",
-                style = MaterialTheme.typography.titleSmall
-            )
-            Text(
-                text = "When a note mentions a date or time, a matching event can be " +
-                    "added to your Google Calendar automatically.",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-            Spacer16()
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                when {
-                    uiState.isCheckingGoogleLink -> CircularProgressIndicator(modifier = Modifier.height(20.dp))
-                    uiState.googleCalendarLinked -> Text(
-                        "Linked",
-                        color = MaterialTheme.colorScheme.primary,
-                        style = MaterialTheme.typography.bodyMedium
-                    )
-                    else -> Text(
-                        "Not linked",
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        style = MaterialTheme.typography.bodyMedium
-                    )
-                }
-                androidx.compose.foundation.layout.Spacer(Modifier.width(12.dp))
-                OutlinedButton(onClick = viewModel::linkGoogleCalendar, enabled = uiState.baseUrl.isNotBlank() && uiState.apiToken.isNotBlank()) {
-                    Text(if (uiState.googleCalendarLinked) "Re-link" else "Link Google Calendar")
-                }
-            }
+
             Spacer16()
             Button(onClick = viewModel::save) {
                 Text("Save")
@@ -174,5 +200,5 @@ fun SettingsScreen(
 
 @Composable
 private fun Spacer16() {
-    androidx.compose.foundation.layout.Spacer(Modifier.height(16.dp))
+    Spacer(Modifier.height(16.dp))
 }

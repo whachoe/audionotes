@@ -1,14 +1,16 @@
-"""Google Calendar integration: linked-account check + event creation.
+"""Google Calendar integration: per-user linked-account check + event creation.
 
 Everything here is best-effort - a Calendar failure must never fail note
-processing (worker.py wraps the call in its own try/except too). If no
-Google account is linked yet, maybe_create_event() is a silent no-op.
+processing (worker.py wraps the call in its own try/except too). If a user
+hasn't linked Calendar (no GoogleCredential row, or no refresh_token),
+maybe_create_event() is a silent no-op for that user's notes.
 """
 from __future__ import annotations
 
 import asyncio
 import logging
 from datetime import datetime, timedelta
+from typing import Optional
 
 from google.auth.transport.requests import Request as GoogleAuthRequest
 from google.oauth2.credentials import Credentials
@@ -23,33 +25,32 @@ logger = logging.getLogger(__name__)
 
 SCOPES = ["https://www.googleapis.com/auth/calendar.events"]
 
-# Single-user app: one fixed row holds the (at most one) linked Google account.
-SINGLETON_ID = 1
+
+def get_credential(session: Session, user_id: str) -> Optional[GoogleCredential]:
+    return session.get(GoogleCredential, user_id)
 
 
-def get_credential(session: Session) -> GoogleCredential | None:
-    return session.get(GoogleCredential, SINGLETON_ID)
-
-
-def is_linked(session: Session) -> bool:
-    cred = get_credential(session)
+def is_linked(session: Session, user_id: str) -> bool:
+    cred = get_credential(session, user_id)
     return cred is not None and bool(cred.refresh_token)
 
 
-async def maybe_create_event(title: str, scheduled_at: datetime, description: str) -> None:
+async def maybe_create_event(user_id: str, title: str, scheduled_at: datetime, description: str) -> None:
     settings = get_settings()
     if not settings.GOOGLE_CLIENT_ID or not settings.GOOGLE_CLIENT_SECRET:
-        return  # Google Calendar isn't configured on this server at all.
+        return  # Google isn't configured on this server at all.
 
     loop = asyncio.get_event_loop()
-    await loop.run_in_executor(None, _create_event_sync, title, scheduled_at, description, settings)
+    await loop.run_in_executor(None, _create_event_sync, user_id, title, scheduled_at, description, settings)
 
 
-def _create_event_sync(title: str, scheduled_at: datetime, description: str, settings: Settings) -> None:
+def _create_event_sync(
+    user_id: str, title: str, scheduled_at: datetime, description: str, settings: Settings
+) -> None:
     with db.session_scope() as session:
-        cred = get_credential(session)
+        cred = get_credential(session, user_id)
         if cred is None or not cred.refresh_token:
-            return  # not linked yet - nothing to do
+            return  # this user hasn't linked Calendar - nothing to do
 
         google_creds = Credentials(
             token=cred.access_token,

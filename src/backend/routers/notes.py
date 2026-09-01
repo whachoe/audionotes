@@ -1,4 +1,8 @@
-"""Notes API: upload, list, detail, status update, transcript update, audio streaming."""
+"""Notes API: upload, list, detail, status update, transcript update, audio streaming.
+
+Every route is scoped to the authenticated user (Phase 3: multi-user) - a
+note is only ever visible to, or modifiable by, the account that created it.
+"""
 from __future__ import annotations
 
 import re
@@ -9,12 +13,12 @@ from fastapi.responses import StreamingResponse
 from sqlmodel import Session, select
 
 from .. import storage
-from ..auth import require_bearer_token
+from ..auth import require_user
 from ..db import get_session
-from ..models import Note, NoteStatus, ProcessingStatus, utcnow
+from ..models import Note, NoteStatus, ProcessingStatus, User, utcnow
 from ..schemas import NoteDetail, NoteListItem, UpdateStatusRequest, UpdateTranscriptRequest
 
-router = APIRouter(prefix="/notes", tags=["notes"], dependencies=[Depends(require_bearer_token)])
+router = APIRouter(prefix="/notes", tags=["notes"])
 
 _RANGE_RE = re.compile(r"bytes=(\d*)-(\d*)")
 _CHUNK_SIZE = 64 * 1024
@@ -68,9 +72,9 @@ def _to_detail(note: Note) -> NoteDetail:
     )
 
 
-def _get_note_or_404(session: Session, note_id: str) -> Note:
+def _get_own_note_or_404(session: Session, note_id: str, user: User) -> Note:
     note = session.get(Note, note_id)
-    if note is None:
+    if note is None or note.user_id != user.id:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Note not found")
     return note
 
@@ -78,9 +82,11 @@ def _get_note_or_404(session: Session, note_id: str) -> Note:
 @router.post("", response_model=NoteDetail, status_code=status.HTTP_201_CREATED)
 async def create_note(
     file: UploadFile = File(...),
+    user: User = Depends(require_user),
     session: Session = Depends(get_session),
 ) -> NoteDetail:
     note = Note(
+        user_id=user.id,
         audio_filename="",  # filled in below, once we know the id
         audio_original_filename=file.filename,
         audio_mime_type=file.content_type,
@@ -105,6 +111,7 @@ async def create_note(
 async def list_notes(
     sort_by: SortBy = SortBy.created_at,
     order: SortOrder = SortOrder.desc,
+    user: User = Depends(require_user),
     session: Session = Depends(get_session),
 ) -> list[NoteListItem]:
     column = {
@@ -113,7 +120,7 @@ async def list_notes(
         SortBy.status: Note.status,
     }[sort_by]
 
-    statement = select(Note)
+    statement = select(Note).where(Note.user_id == user.id)
     statement = statement.order_by(column.asc() if order == SortOrder.asc else column.desc())
 
     notes = session.exec(statement).all()
@@ -121,8 +128,10 @@ async def list_notes(
 
 
 @router.get("/{note_id}", response_model=NoteDetail)
-async def get_note(note_id: str, session: Session = Depends(get_session)) -> NoteDetail:
-    note = _get_note_or_404(session, note_id)
+async def get_note(
+    note_id: str, user: User = Depends(require_user), session: Session = Depends(get_session)
+) -> NoteDetail:
+    note = _get_own_note_or_404(session, note_id, user)
     return _to_detail(note)
 
 
@@ -130,9 +139,10 @@ async def get_note(note_id: str, session: Session = Depends(get_session)) -> Not
 async def update_status(
     note_id: str,
     payload: UpdateStatusRequest,
+    user: User = Depends(require_user),
     session: Session = Depends(get_session),
 ) -> NoteDetail:
-    note = _get_note_or_404(session, note_id)
+    note = _get_own_note_or_404(session, note_id, user)
     note.status = payload.status
     note.updated_at = utcnow()
     session.add(note)
@@ -145,9 +155,10 @@ async def update_status(
 async def update_transcript(
     note_id: str,
     payload: UpdateTranscriptRequest,
+    user: User = Depends(require_user),
     session: Session = Depends(get_session),
 ) -> NoteDetail:
-    note = _get_note_or_404(session, note_id)
+    note = _get_own_note_or_404(session, note_id, user)
     transcript_path = storage.write_markdown(note_id, payload.markdown)
     note.transcript_path = transcript_path
     note.updated_at = utcnow()
@@ -182,9 +193,10 @@ def _iter_file_full(path):
 async def get_audio(
     note_id: str,
     request: Request,
+    user: User = Depends(require_user),
     session: Session = Depends(get_session),
 ) -> StreamingResponse:
-    note = _get_note_or_404(session, note_id)
+    note = _get_own_note_or_404(session, note_id, user)
     file_path = storage.audio_path(note.id, note.audio_filename)
     if not file_path.exists():
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Audio file missing")

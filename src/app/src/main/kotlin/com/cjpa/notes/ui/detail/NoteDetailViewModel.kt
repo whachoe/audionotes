@@ -158,7 +158,7 @@ class NoteDetailViewModel @Inject constructor(
             _uiState.update { it.copy(errorMessage = "Server not configured — check Settings.") }
             return
         }
-        val token = settingsRepository.getApiToken()
+        val token = settingsRepository.getSessionToken()
         val headers = if (!token.isNullOrBlank()) mapOf("Authorization" to "Bearer $token") else emptyMap()
 
         _uiState.update { it.copy(isPlayerPreparing = true) }
