@@ -72,7 +72,10 @@ def _create_event_sync(title: str, scheduled_at: datetime, description: str, set
         event = {
             "summary": title,
             "description": description,
-            "start": {"dateTime": scheduled_at.isoformat()},
-            "end": {"dateTime": end.isoformat()},
+            # scheduled_at/end are already tz-aware (see summarization.py),
+            # so isoformat() carries the correct UTC offset for whichever of
+            # CET/CEST applies - timeZone is set too for Calendar UI display.
+            "start": {"dateTime": scheduled_at.isoformat(), "timeZone": settings.LOCAL_TIMEZONE},
+            "end": {"dateTime": end.isoformat(), "timeZone": settings.LOCAL_TIMEZONE},
         }
         service.events().insert(calendarId=settings.GOOGLE_CALENDAR_ID, body=event).execute()

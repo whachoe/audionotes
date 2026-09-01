@@ -36,6 +36,10 @@ class Settings(BaseSettings):
     GOOGLE_REDIRECT_URI: str = ""
     GOOGLE_CALENDAR_ID: str = "primary"
 
+    # IANA zone recognized date/times are interpreted in and scheduled
+    # against on Google Calendar (handles CET/CEST DST automatically).
+    LOCAL_TIMEZONE: str = "Europe/Brussels"
+
 
 @lru_cache
 def get_settings() -> Settings:
