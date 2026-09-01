@@ -60,6 +60,32 @@ def reset_engine() -> None:
     _engine = None
 
 
+def _drop_incompatible_tables(engine: Engine) -> None:
+    """create_all() only creates *missing* tables - it never reshapes an
+    existing one. google_credential moved from a Phase 2 singleton (`id`
+    primary key) to a Phase 3 per-user row (`user_id` primary key, a
+    different column set entirely) - not something an ADD COLUMN can fix.
+    Drop the old-shaped table so create_all() below recreates it correctly;
+    any previously-linked Google account just needs to sign in again via the
+    new combined flow, which it must do anyway now that Calendar linking is
+    tied to a real multi-user account rather than a single fixed row.
+    """
+    with engine.connect() as conn:
+        tables = {
+            row[0]
+            for row in conn.exec_driver_sql("SELECT name FROM sqlite_master WHERE type='table'").fetchall()
+        }
+        # SQLModel's default table name is the lowercased class name with no
+        # separators (GoogleCredential -> "googlecredential") - not the
+        # snake_case you'd get from a naming convention, so this must match
+        # GoogleCredential.__tablename__ exactly, not a guessed spelling.
+        if "googlecredential" in tables:
+            columns = {row[1] for row in conn.exec_driver_sql("PRAGMA table_info(googlecredential)").fetchall()}
+            if "user_id" not in columns:
+                conn.exec_driver_sql("DROP TABLE googlecredential")
+                conn.commit()
+
+
 def _add_missing_columns(engine: Engine) -> None:
     """SQLModel.metadata.create_all only creates missing *tables* - it never
     alters an already-existing one. This adds any columns a model has grown
@@ -83,6 +109,7 @@ def _add_missing_columns(engine: Engine) -> None:
 
 def init_db() -> None:
     engine = get_engine()
+    _drop_incompatible_tables(engine)
     SQLModel.metadata.create_all(engine)
     _add_missing_columns(engine)
 
