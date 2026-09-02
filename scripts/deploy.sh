@@ -6,6 +6,7 @@ cd "$repo_root"
 
 git pull
 sudo .venv/bin/pip install -r requirements.txt
+sudo chown -R audionotes:cjpa .
 sudo systemctl daemon-reload
 sudo systemctl restart audionotes-backend
 
