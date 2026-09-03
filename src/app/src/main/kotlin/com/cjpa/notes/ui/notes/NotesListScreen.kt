@@ -17,6 +17,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FloatingActionButton
+import androidx.compose.foundation.Image
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -44,7 +45,6 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.cjpa.notes.R
 import com.cjpa.notes.data.local.UploadState
-import com.cjpa.notes.ui.theme.WordmarkTitle
 import kotlinx.coroutines.delay
 import java.time.Instant
 import java.time.ZoneId
@@ -70,7 +70,13 @@ fun NotesListScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { WordmarkTitle() },
+                title = {
+                    Image(
+                        painter = painterResource(R.drawable.copywaste_notes_logo),
+                        contentDescription = "Copywaste Notes",
+                        modifier = Modifier.height(28.dp)
+                    )
+                },
                 actions = {
                     IconButton(onClick = onSettingsClick) {
                         Icon(Icons.Filled.Settings, contentDescription = "Settings")

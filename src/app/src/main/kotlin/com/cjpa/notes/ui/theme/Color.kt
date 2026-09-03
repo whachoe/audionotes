@@ -17,8 +17,3 @@ val StatusOpenColor = Color(0xFF1976D2)
 val StatusInProgressColor = Color(0xFFF9A825)
 val StatusTodoColor = Color(0xFF7B1FA2)
 val StatusClosedColor = Color(0xFF388E3C)
-
-// Copywaste brand colors, sampled from the copyWaste wordmark at copywaste.org
-// - used for the "Copywaste Notes" wordmark lockup title.
-val CopywasteNavy = Color(0xFF09136C)
-val CopywasteRed = Color(0xFFC40606)

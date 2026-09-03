@@ -1,5 +1,7 @@
 package com.cjpa.notes.ui.settings
 
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -36,6 +38,9 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -43,6 +48,7 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.cjpa.notes.R
 import com.cjpa.notes.ui.notes.NoteStatus
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -99,6 +105,15 @@ fun SettingsScreen(
                 .padding(16.dp)
                 .verticalScroll(rememberScrollState())
         ) {
+            Image(
+                painter = painterResource(R.drawable.copywaste_notes_logo),
+                contentDescription = "Copywaste Notes",
+                modifier = Modifier
+                    .height(40.dp)
+                    .align(Alignment.CenterHorizontally)
+            )
+            Spacer16()
+
             Text(
                 text = "Server",
                 style = MaterialTheme.typography.titleSmall
@@ -162,9 +177,16 @@ fun SettingsScreen(
                     }
                 }
             } else {
-                Button(onClick = viewModel::signIn, enabled = uiState.baseUrl.isNotBlank()) {
-                    Text("Sign in with Google")
-                }
+                val canSignIn = uiState.baseUrl.isNotBlank()
+                Image(
+                    painter = painterResource(R.drawable.google_sign_in),
+                    contentDescription = "Sign in with Google",
+                    contentScale = ContentScale.FillHeight,
+                    modifier = Modifier
+                        .height(40.dp)
+                        .alpha(if (canSignIn) 1f else 0.5f)
+                        .clickable(enabled = canSignIn, onClick = viewModel::signIn)
+                )
             }
 
             Spacer16()
