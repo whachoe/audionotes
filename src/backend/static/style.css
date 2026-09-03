@@ -81,6 +81,10 @@ a:hover { text-decoration: underline; }
   flex-wrap: wrap;
 }
 .record-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
   padding: 0.9rem 1.75rem;
   border-radius: 999px;
   border: none;
@@ -95,6 +99,10 @@ a:hover { text-decoration: underline; }
   background: var(--red);
 }
 .record-btn:disabled { opacity: 0.6; cursor: default; }
+.record-btn .icon { flex: 0 0 auto; }
+.record-btn .icon-stop { display: none; }
+.record-btn[data-state="recording"] .icon-mic { display: none; }
+.record-btn[data-state="recording"] .icon-stop { display: inline-block; }
 .record-timer {
   font-variant-numeric: tabular-nums;
   color: var(--red);
@@ -159,7 +167,32 @@ a:hover { text-decoration: underline; }
 
 @media (max-width: 600px) {
   .topbar { padding: 0.85rem 1rem; }
-  .record-section, .filters, #notes-table-wrap, .transcript-form, .detail-meta, .status-form { padding-left: 1rem; padding-right: 1rem; }
+  .filters, #notes-table-wrap, .transcript-form, .detail-meta, .status-form { padding-left: 1rem; padding-right: 1rem; }
   .notes-table th, .notes-table td { padding: 0.5rem; font-size: 0.85rem; }
-  .record-btn { min-width: 0; flex: 1; }
+
+  /* Same round, icon-only record button as the Android app, pinned to the
+     bottom of the screen instead of sitting inline with the page content. */
+  body { padding-bottom: 96px; }
+  .record-section {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 10;
+    margin: 0;
+    justify-content: center;
+    background: var(--surface);
+    border-top: 1px solid var(--border);
+    padding: 0.75rem 1rem;
+  }
+  .record-btn {
+    width: 64px;
+    height: 64px;
+    min-width: 0;
+    flex: 0 0 auto;
+    padding: 0;
+    border-radius: 50%;
+  }
+  .record-btn .icon { width: 26px; height: 26px; }
+  .record-label { display: none; }
 }

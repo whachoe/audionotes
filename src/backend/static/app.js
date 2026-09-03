@@ -7,6 +7,7 @@
   const btn = document.getElementById("record-btn");
   if (!btn) return; // not on this page
 
+  const labelEl = btn.querySelector(".record-label");
   const timerEl = document.getElementById("record-timer");
   const errorEl = document.getElementById("record-error");
 
@@ -24,14 +25,14 @@
 
   function setIdle() {
     btn.dataset.state = "idle";
-    btn.textContent = "Start Recording";
+    labelEl.textContent = "Start Recording";
     timerEl.textContent = "";
     clearInterval(timerInterval);
   }
 
   function setRecording() {
     btn.dataset.state = "recording";
-    btn.textContent = "Stop Recording";
+    labelEl.textContent = "Stop Recording";
     startedAt = Date.now();
     timerInterval = setInterval(() => {
       timerEl.textContent = formatElapsed(Date.now() - startedAt);
