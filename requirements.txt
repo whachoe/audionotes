@@ -9,6 +9,7 @@ faster-whisper>=1.0
 google-auth>=2.29
 google-api-python-client>=2.126
 jinja2>=3.1
+dateparser>=1.2
 # Pure-Python IANA timezone data - zoneinfo.ZoneInfo() falls back to this
 # automatically when the OS has no system tzdata (e.g. python:3.11-slim in
 # Dockerfile); a no-op extra safety net on systems that do have it.

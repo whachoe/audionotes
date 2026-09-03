@@ -1,9 +1,7 @@
 from __future__ import annotations
 
 import shutil
-from datetime import datetime
 from pathlib import Path
-from typing import Optional, Tuple
 
 import pytest
 from fastapi.testclient import TestClient
@@ -18,24 +16,31 @@ from backend.services import summarization, transcription
 FIXTURES_DIR = Path(__file__).parent / "fixtures"
 SAMPLE_WAV = FIXTURES_DIR / "sample.wav"
 
-FAKE_TRANSCRIPT = "this is a fake transcript used only for automated testing purposes today"
+# Deliberately has no date/time-shaped words in it, so date_recognition
+# (which runs for real in tests - it's local and deterministic, no server to
+# mock) naturally finds nothing and scheduled_at stays None by default.
+FAKE_TRANSCRIPT = "this is a fake transcript used only for automated testing purposes please"
 FAKE_TITLE = "Fake Generated Title"
 
 
 @pytest.fixture(autouse=True)
 def patch_services(monkeypatch):
-    """Never hit a real whisper model or a real Ollama server in tests."""
+    """Never hit a real whisper model or a real Ollama server in tests.
+
+    date_recognition isn't mocked here - it's local/deterministic (no
+    network, no server), so it's safe (and more meaningful) to let it run
+    for real; tests that care about a specific scheduled_at either craft a
+    transcript that contains one or monkeypatch it explicitly.
+    """
 
     def fake_transcribe(path: str) -> str:
         return FAKE_TRANSCRIPT
 
-    async def fake_generate_title_and_schedule(
-        transcript: str, reference_time: datetime
-    ) -> Tuple[str, Optional[datetime]]:
-        return FAKE_TITLE, None
+    async def fake_generate_title(transcript: str) -> str:
+        return FAKE_TITLE
 
     monkeypatch.setattr(transcription, "transcribe_audio", fake_transcribe)
-    monkeypatch.setattr(summarization, "generate_title_and_schedule", fake_generate_title_and_schedule)
+    monkeypatch.setattr(summarization, "generate_title", fake_generate_title)
 
 
 @pytest.fixture

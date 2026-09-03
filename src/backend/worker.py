@@ -14,7 +14,7 @@ from sqlmodel import Session, select
 
 from . import storage
 from .models import Note, ProcessingStatus
-from .services import google_calendar, summarization, transcription
+from .services import date_recognition, google_calendar, summarization, transcription
 from .services.markdown_builder import build_markdown
 
 logger = logging.getLogger(__name__)
@@ -104,13 +104,22 @@ async def process_next_note(session_factory) -> Optional[str]:
     finally:
         session.close()
 
-    # --- Summarization + date/time recognition (non-fatal on failure; falls back internally) ---
+    # --- Summarization (non-fatal on failure; falls back internally) ---
     try:
-        title, scheduled_at = await summarization.generate_title_and_schedule(transcript_text, created_at)
+        title = await summarization.generate_title(transcript_text)
     except Exception:  # noqa: BLE001 - summarization must never fail the note
         logger.exception("Unexpected error generating title for note %s", note_id)
         words = transcript_text.strip().split()
         title = " ".join(words[:10]) if words else "Untitled note"
+
+    # --- Date/time recognition (Phase 2, dateparser-based; non-fatal, runs
+    # in a thread since dateparser's search is somewhat CPU-heavy) ---
+    try:
+        scheduled_at = await loop.run_in_executor(
+            None, date_recognition.find_scheduled_at, transcript_text, created_at
+        )
+    except Exception:  # noqa: BLE001 - date recognition must never fail the note
+        logger.exception("Date recognition failed for note %s", note_id)
         scheduled_at = None
 
     # --- Calendar event (Phase 2/3; non-fatal, and a silent no-op if not linked) ---

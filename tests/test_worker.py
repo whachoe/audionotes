@@ -7,7 +7,7 @@ import pytest
 
 from backend import db, storage, worker
 from backend.models import Note, ProcessingStatus, User
-from backend.services import google_calendar, summarization, transcription
+from backend.services import date_recognition, google_calendar, summarization, transcription
 
 from tests.conftest import FAKE_TITLE, FAKE_TRANSCRIPT, SAMPLE_WAV
 
@@ -63,6 +63,8 @@ async def test_happy_path_queued_to_done(worker_db):
         assert refreshed.processing_status == ProcessingStatus.done
         assert refreshed.processing_error is None
         assert refreshed.title == FAKE_TITLE
+        # FAKE_TRANSCRIPT has no date/time-shaped words - date_recognition
+        # runs for real here (it's local/deterministic, nothing to mock).
         assert refreshed.scheduled_at is None
         assert refreshed.transcript_path == f"notes/{note.id}.md"
 
@@ -103,10 +105,10 @@ async def test_transcription_failure_marks_failed(worker_db, monkeypatch):
 async def test_summarization_failure_still_marks_done_with_fallback_title(worker_db, monkeypatch):
     note = _seed_queued_note(worker_db)
 
-    async def boom(transcript: str, reference_time: datetime):
+    async def boom(transcript: str) -> str:
         raise RuntimeError("ollama unreachable")
 
-    monkeypatch.setattr(summarization, "generate_title_and_schedule", boom)
+    monkeypatch.setattr(summarization, "generate_title", boom)
 
     processed_id = await worker.process_next_note(db.session_scope)
     assert processed_id == note.id
@@ -121,14 +123,34 @@ async def test_summarization_failure_still_marks_done_with_fallback_title(worker
 
 
 @pytest.mark.asyncio
+async def test_date_recognition_failure_still_marks_done(worker_db, monkeypatch):
+    """A dateparser crash must not fail the note - only the schedule is lost."""
+    note = _seed_queued_note(worker_db)
+
+    def boom(transcript: str, reference_time: datetime):
+        raise RuntimeError("dateparser exploded")
+
+    monkeypatch.setattr(date_recognition, "find_scheduled_at", boom)
+
+    processed_id = await worker.process_next_note(db.session_scope)
+    assert processed_id == note.id
+
+    with db.session_scope() as session:
+        refreshed = session.get(Note, note.id)
+        assert refreshed.processing_status == ProcessingStatus.done
+        assert refreshed.title == FAKE_TITLE
+        assert refreshed.scheduled_at is None
+
+
+@pytest.mark.asyncio
 async def test_recognized_schedule_is_saved_on_the_note(worker_db, monkeypatch):
     note = _seed_queued_note(worker_db)
     scheduled = datetime(2026, 9, 5, 14, 0, tzinfo=timezone.utc)
 
-    async def fake_with_schedule(transcript: str, reference_time: datetime):
-        return FAKE_TITLE, scheduled
+    def fake_find_scheduled_at(transcript: str, reference_time: datetime):
+        return scheduled
 
-    monkeypatch.setattr(summarization, "generate_title_and_schedule", fake_with_schedule)
+    monkeypatch.setattr(date_recognition, "find_scheduled_at", fake_find_scheduled_at)
 
     processed_id = await worker.process_next_note(db.session_scope)
     assert processed_id == note.id
@@ -154,15 +176,15 @@ async def test_calendar_failure_does_not_fail_the_note(worker_db, monkeypatch):
     scheduled = datetime(2026, 9, 5, 14, 0, tzinfo=timezone.utc)
     calendar_called = False
 
-    async def fake_with_schedule(transcript: str, reference_time: datetime):
-        return FAKE_TITLE, scheduled
+    def fake_find_scheduled_at(transcript: str, reference_time: datetime):
+        return scheduled
 
     async def boom_calendar(*args, **kwargs):
         nonlocal calendar_called
         calendar_called = True
         raise RuntimeError("calendar API exploded")
 
-    monkeypatch.setattr(summarization, "generate_title_and_schedule", fake_with_schedule)
+    monkeypatch.setattr(date_recognition, "find_scheduled_at", fake_find_scheduled_at)
     monkeypatch.setattr(google_calendar, "maybe_create_event", boom_calendar)
 
     processed_id = await worker.process_next_note(db.session_scope)
@@ -184,14 +206,14 @@ async def test_ownerless_note_never_attempts_calendar(worker_db, monkeypatch):
     scheduled = datetime(2026, 9, 5, 14, 0, tzinfo=timezone.utc)
     calendar_called = False
 
-    async def fake_with_schedule(transcript: str, reference_time: datetime):
-        return FAKE_TITLE, scheduled
+    def fake_find_scheduled_at(transcript: str, reference_time: datetime):
+        return scheduled
 
     async def spy_calendar(*args, **kwargs):
         nonlocal calendar_called
         calendar_called = True
 
-    monkeypatch.setattr(summarization, "generate_title_and_schedule", fake_with_schedule)
+    monkeypatch.setattr(date_recognition, "find_scheduled_at", fake_find_scheduled_at)
     monkeypatch.setattr(google_calendar, "maybe_create_event", spy_calendar)
 
     processed_id = await worker.process_next_note(db.session_scope)
