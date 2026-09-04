@@ -28,7 +28,7 @@
 ==========
 ### 2.1 Date/Time recognition
   #### 2.1.1. Google Calendar link
-  Make it possible for the user to link their Google Calendar to the backend. We want the backend to recognize dates/times and schedule an event in the google calendar.
+  Make it possible for the user to link their Google Calendar to the backend. We want the backend to recognize dates/times and schedule an event in the google calendar. Use the Python `dateparser` library for parsing dates.
   #### 2.1.2. Extra Datetime field
   When the backend recognizes a date/time, it also creates a new Datetime field `scheduledAt`. 
 
