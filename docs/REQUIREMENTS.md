@@ -17,12 +17,12 @@
   - User is able to edit the Markdown that contains the initial transcript and the changes get saved in the backend. 
   - User can determine which 'status' values are going to be filtered in the list from the settings menu.
 
-
-
   2. Backend
   - Receives audiofiles. For each audiofile, it generates a text transcript and saves that transcript in a markdown together with a link to the original audiofile.
   - For each transcript, also a text summary gets created which can function as a title for the note. 
   - the backend can serve a list of all the received notes and is able to present that list sorted on several fields: creation time, duration of recording, status of the note
+
+
 
 2. Phase 2
 ==========
@@ -43,3 +43,7 @@ Now we want to have the same functionality as is in the Android app, but this ti
 Also use Google account to log into the frontend.
 Make sure this HTML-frontend is mobile-friendly.
 This should all be deployed to https://notes.copywaste.org
+
+4. Phase 4
+==========
+TBD
