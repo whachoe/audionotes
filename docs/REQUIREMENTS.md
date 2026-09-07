@@ -46,4 +46,5 @@ This should all be deployed to https://notes.copywaste.org
 
 4. Phase 4
 ==========
-TBD
+### 4.1 Replace date_recognition with Duckling
+I want to test Meta Duckling for our date/time extraction instead of the Python `dateparser` we currently use. 

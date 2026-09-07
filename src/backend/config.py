@@ -21,6 +21,9 @@ class Settings(BaseSettings):
     OLLAMA_BASE_URL: str = "http://localhost:11434"
     OLLAMA_MODEL: str = "llama3.2:3b"
 
+    # Duckling (Phase 4) HTTP service used for date/time recognition.
+    DUCKLING_BASE_URL: str = "http://localhost:8000"
+
     # Background worker poll interval, in seconds.
     POLL_INTERVAL_SECONDS: float = 2.0
 

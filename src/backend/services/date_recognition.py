@@ -1,56 +1,44 @@
-"""Date/time recognition in transcripts via the `dateparser` library
-(Phase 2) - runs entirely locally, no LLM call involved.
+"""Date/time recognition in transcripts via Meta's Duckling (Phase 4) -
+runs as a separate HTTP service (see DUCKLING_BASE_URL); replaces the
+earlier dateparser-based implementation.
 
-Two quirks of dateparser.search.search_dates() showed up in testing against
-real transcript-shaped sentences, and both are guarded against below:
-
-1. search_dates() finds a matching span AND resolves it to a datetime in one
-   step, and that resolution can be wrong even when the span it found is
-   fine - e.g. "December 5th at 10am" resolved via search_dates() alone came
-   back as the year 2110. Re-parsing the exact matched text with a fresh
-   dateparser.parse() call (same settings) gives the correct year. This is
-   also what lets a match be individually rejected without discarding the
-   whole result if a later match is fine.
-2. search_dates() sometimes truncates its own match short (e.g. cutting
-   "10 in the morning" down to "10 in the"), which re-parses to nonsense
-   regardless. A short, low-information match (below MIN_MATCH_LENGTH) is
-   also how plain words like "We" get misread as an abbreviated weekday.
-   Both are caught by _is_plausible() below - the match-length floor for the
-   second, the year sanity bound for both (a truncated fragment tends to
-   produce a wildly wrong year, same symptom as issue 1).
+Duckling's /parse endpoint takes a single language per request (no
+multi-locale search like dateparser had), so this calls it once per
+candidate language (see LANGUAGES below) with the same transcript and
+reference time, then merges the results by the position each match starts
+at in the transcript - mirroring dateparser.search()'s left-to-right match
+order. The first plausible match (see _is_plausible) wins.
 """
 from __future__ import annotations
 
 import logging
 from datetime import datetime, timezone
-from typing import Optional
+from typing import Any, Optional
 from zoneinfo import ZoneInfo
 
-import dateparser
-import dateparser.search
+import httpx
 
-from ..config import get_settings
+from ..config import Settings, get_settings
 
 logger = logging.getLogger(__name__)
 
 # The languages a Belgian user is most likely to actually speak into the
-# app. Restricting this list (rather than leaving it unset, which makes
-# dateparser try every supported locale) keeps search_dates() fast.
+# app. Duckling natively supports all three (Duckling/Locale.hs).
 LANGUAGES = ["en", "nl", "fr"]
 
 MIN_MATCH_LENGTH = 4
 MAX_YEARS_FROM_REFERENCE = 3
 
+REQUEST_TIMEOUT_SECONDS = 5.0
+
 
 def _to_local(reference_time: datetime, local_zone: ZoneInfo) -> datetime:
     """reference_time is Note.created_at, as read back from SQLite: a naive
     wall-clock value that was originally computed as UTC (see models.utcnow)
-    and lost its tzinfo on the DB round-trip. Label it UTC, then convert to
-    the configured local zone so "tomorrow"/"next Tuesday" etc. resolve
-    relative to the user's own time, not the server's.
+    and lost its tzinfo on the DB round-trip. Label it UTC so downstream
+    conversions (epoch ms for Duckling, local zone for display) are correct.
     """
-    aware_utc = reference_time if reference_time.tzinfo else reference_time.replace(tzinfo=timezone.utc)
-    return aware_utc.astimezone(local_zone)
+    return reference_time if reference_time.tzinfo else reference_time.replace(tzinfo=timezone.utc)
 
 
 def _is_plausible(matched_text: str, candidate: datetime, reference_year: int) -> tuple[bool, str]:
@@ -64,8 +52,37 @@ def _is_plausible(matched_text: str, candidate: datetime, reference_year: int) -
     return True, "ok"
 
 
+def _extract_iso_value(value: dict[str, Any]) -> Optional[str]:
+    """A Duckling "time" value is either {"type": "value", "value": <iso>}
+    or, for a range like "this afternoon", {"type": "interval", "from": {...},
+    "to": {...}} - each of which is itself a value/iso pair. Prefer "from"
+    for intervals (the start of the range is the more useful anchor for
+    scheduling).
+    """
+    if value.get("type") == "interval":
+        anchor = value.get("from") or value.get("to")
+        return anchor.get("value") if anchor else None
+    return value.get("value")
+
+
+def _query_duckling(transcript: str, lang: str, reftime_ms: int, settings: Settings) -> list[dict[str, Any]]:
+    response = httpx.post(
+        f"{settings.DUCKLING_BASE_URL}/parse",
+        data={
+            "lang": lang.upper(),
+            "text": transcript,
+            "dims": '["time"]',
+            "tz": settings.LOCAL_TIMEZONE,
+            "reftime": str(reftime_ms),
+        },
+        timeout=REQUEST_TIMEOUT_SECONDS,
+    )
+    response.raise_for_status()
+    return [entity for entity in response.json() if entity.get("dim") == "time"]
+
+
 def find_scheduled_at(transcript: str, reference_time: datetime) -> Optional[datetime]:
-    """Best-effort: the first plausible date/time dateparser finds in the
+    """Best-effort: the first plausible date/time Duckling finds in the
     transcript, in settings.LOCAL_TIMEZONE local time - or None if nothing
     looks like a date/time, or on any parsing error. Must never raise.
     """
@@ -74,66 +91,86 @@ def find_scheduled_at(transcript: str, reference_time: datetime) -> Optional[dat
 
     settings = get_settings()
     local_zone = ZoneInfo(settings.LOCAL_TIMEZONE)
-    local_reference = _to_local(reference_time, local_zone).replace(tzinfo=None)
-
-    parser_settings = {
-        "RELATIVE_BASE": local_reference,
-        "TIMEZONE": settings.LOCAL_TIMEZONE,
-        "RETURN_AS_TIMEZONE_AWARE": True,
-        "PREFER_DATES_FROM": "future",
-    }
+    aware_reference = _to_local(reference_time, local_zone)
+    reftime_ms = int(aware_reference.timestamp() * 1000)
 
     logger.debug(
-        "date_recognition: reference_time=%r local_reference=%r transcript=%r",
+        "date_recognition: reference_time=%r reftime_ms=%d transcript=%r",
         reference_time,
-        local_reference,
+        reftime_ms,
         transcript,
     )
 
     try:
-        matches = dateparser.search.search_dates(transcript, languages=LANGUAGES, settings=parser_settings)
-        if not matches:
-            logger.debug("date_recognition: search_dates found no matches")
+        candidates: list[tuple[str, dict[str, Any]]] = []
+        for lang in LANGUAGES:
+            try:
+                entities = _query_duckling(transcript, lang, reftime_ms, settings)
+            except Exception as exc:  # noqa: BLE001 - one language failing shouldn't cost the others
+                logger.debug("date_recognition: duckling request failed for lang=%s: %s", lang, exc)
+                continue
+
+            logger.debug(
+                "date_recognition: duckling(lang=%s) found %d entity(ies): %r",
+                lang,
+                len(entities),
+                [(e.get("body"), _extract_iso_value(e.get("value", {}))) for e in entities],
+            )
+            candidates.extend((lang, entity) for entity in entities)
+
+        if not candidates:
+            logger.debug("date_recognition: no time entities found in any language")
             return None
 
-        logger.debug(
-            "date_recognition: search_dates found %d match(es): %r",
-            len(matches),
-            [(text, dt.isoformat()) for text, dt in matches],
-        )
+        # Sort by where a match starts (mirrors dateparser.search's
+        # left-to-right order), and for same-start matches - which happen
+        # across languages when e.g. English catches only "5 september" but
+        # Dutch catches the fuller "5 september om 10 uur" - prefer the
+        # longer, more complete span.
+        candidates.sort(key=lambda pair: (pair[1].get("start", 0), -(pair[1].get("end", 0) - pair[1].get("start", 0))))
 
-        for matched_text, search_dt in matches:
-            # Re-parse the matched span on its own rather than trusting the
-            # datetime search_dates() already attached to it - see module
-            # docstring point 1.
-            reparsed = dateparser.parse(matched_text, languages=LANGUAGES, settings=parser_settings)
-            if reparsed is None:
+        for lang, entity in candidates:
+            matched_text = entity.get("body", "")
+            iso_value = _extract_iso_value(entity.get("value", {}))
+            if iso_value is None:
                 logger.debug(
-                    "date_recognition: rejected match %r - re-parse returned None (search_dates had given %s)",
+                    "date_recognition: rejected match lang=%s body=%r - no usable value in response",
+                    lang,
                     matched_text,
-                    search_dt.isoformat(),
                 )
                 continue
 
-            plausible, reason = _is_plausible(matched_text, reparsed, local_reference.year)
+            try:
+                parsed = datetime.fromisoformat(iso_value).astimezone(local_zone)
+            except ValueError:
+                logger.debug(
+                    "date_recognition: rejected match lang=%s body=%r - unparseable value %r",
+                    lang,
+                    matched_text,
+                    iso_value,
+                )
+                continue
+
+            plausible, reason = _is_plausible(matched_text, parsed, aware_reference.year)
             if plausible:
                 logger.debug(
-                    "date_recognition: accepted match %r -> %s (search_dates had given %s)",
+                    "date_recognition: accepted match lang=%s body=%r -> %s",
+                    lang,
                     matched_text,
-                    reparsed.isoformat(),
-                    search_dt.isoformat(),
+                    parsed.isoformat(),
                 )
-                return reparsed
+                return parsed
 
             logger.debug(
-                "date_recognition: rejected match %r -> %s - %s",
+                "date_recognition: rejected match lang=%s body=%r -> %s - %s",
+                lang,
                 matched_text,
-                reparsed.isoformat(),
+                parsed.isoformat(),
                 reason,
             )
 
-        logger.debug("date_recognition: no plausible match among %d candidate(s)", len(matches))
+        logger.debug("date_recognition: no plausible match among %d candidate(s)", len(candidates))
         return None
     except Exception:  # noqa: BLE001 - date recognition must never fail the note
-        logger.exception("dateparser failed on transcript")
+        logger.exception("duckling failed on transcript")
         return None

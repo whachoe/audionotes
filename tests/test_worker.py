@@ -124,11 +124,11 @@ async def test_summarization_failure_still_marks_done_with_fallback_title(worker
 
 @pytest.mark.asyncio
 async def test_date_recognition_failure_still_marks_done(worker_db, monkeypatch):
-    """A dateparser crash must not fail the note - only the schedule is lost."""
+    """A date_recognition crash must not fail the note - only the schedule is lost."""
     note = _seed_queued_note(worker_db)
 
     def boom(transcript: str, reference_time: datetime):
-        raise RuntimeError("dateparser exploded")
+        raise RuntimeError("duckling exploded")
 
     monkeypatch.setattr(date_recognition, "find_scheduled_at", boom)
 

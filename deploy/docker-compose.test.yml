@@ -1,0 +1,26 @@
+# Override for running the backing services (Ollama, Duckling) locally
+# during test runs, with their ports published to the host so pytest -
+# running directly on the host, not in a container - can reach them. The
+# base compose file only `expose`s them on the internal compose network,
+# which is right for the deployed stack but unreachable from the host.
+#
+# Usage (from the repo root):
+#   docker compose -f deploy/docker-compose.yml -f deploy/docker-compose.test.yml up -d ollama duckling
+#   docker compose -f deploy/docker-compose.yml -f deploy/docker-compose.test.yml exec ollama ollama pull llama3.2:3b
+#   pytest
+#
+# Only `ollama` and `duckling` are named, so `app`/`caddy` (and their .env
+# requirement) are never started. The model pull is a one-off - it's kept
+# in the ollama_data volume, so it only needs to run again after that
+# volume is removed.
+#
+# Ports match config.py's defaults (OLLAMA_BASE_URL, DUCKLING_BASE_URL), so
+# no extra env vars are needed to point pytest at them.
+services:
+  ollama:
+    ports:
+      - "11434:11434"
+
+  duckling:
+    ports:
+      - "8000:8000"
