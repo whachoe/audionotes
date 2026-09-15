@@ -93,6 +93,27 @@ def test_patch_status_happy_path(client, auth_headers):
     assert detail.json()["status"] == "in_progress"
 
 
+def test_patch_title_happy_path(client, auth_headers):
+    upload = _upload(client, auth_headers)
+    note_id = upload.json()["id"]
+
+    response = client.patch(f"/api/notes/{note_id}/title", json={"title": "  Renamed  "}, headers=auth_headers)
+    assert response.status_code == 200
+    assert response.json()["title"] == "Renamed"  # whitespace trimmed
+
+    detail = client.get(f"/api/notes/{note_id}", headers=auth_headers)
+    assert detail.json()["title"] == "Renamed"
+
+
+def test_patch_title_blank_clears_it(client, auth_headers):
+    upload = _upload(client, auth_headers)
+    note_id = upload.json()["id"]
+
+    response = client.patch(f"/api/notes/{note_id}/title", json={"title": "   "}, headers=auth_headers)
+    assert response.status_code == 200
+    assert response.json()["title"] is None
+
+
 def test_put_transcript_persists_to_file_and_db(client, auth_headers, env_setup):
     upload = _upload(client, auth_headers)
     note_id = upload.json()["id"]
@@ -250,3 +271,18 @@ def test_get_audio_supports_range(client, auth_headers, sample_wav_bytes):
     assert response.status_code == 206
     assert response.content == sample_wav_bytes[0:10]
     assert response.headers["content-range"] == f"bytes 0-9/{len(sample_wav_bytes)}"
+
+
+def test_get_audio_404s_for_a_markdown_only_note(client, auth_headers, test_user):
+    """Phase 4.2 notes have no recording at all (audio_filename="") - make
+    sure that 404s cleanly instead of streaming back the bare audio
+    directory storage.audio_path() would otherwise resolve to."""
+    with db.session_scope() as session:
+        note = Note(user_id=test_user.id, audio_filename="", processing_status=ProcessingStatus.done)
+        session.add(note)
+        session.commit()
+        session.refresh(note)
+        note_id = note.id
+
+    response = client.get(f"/api/notes/{note_id}/audio", headers=auth_headers)
+    assert response.status_code == 404

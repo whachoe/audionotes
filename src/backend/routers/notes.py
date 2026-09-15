@@ -17,8 +17,7 @@ from .. import storage
 from ..auth import require_user
 from ..db import get_session
 from ..models import Note, NoteStatus, ProcessingStatus, StorageLocation, User, utcnow
-from ..services import note_storage
-from ..schemas import NoteDetail, NoteListItem, UpdateStatusRequest, UpdateTranscriptRequest
+from ..schemas import NoteDetail, NoteListItem, UpdateStatusRequest, UpdateTitleRequest, UpdateTranscriptRequest
 
 router = APIRouter(prefix="/notes", tags=["notes"])
 
@@ -161,6 +160,22 @@ async def update_status(
     session.commit()
     session.refresh(note)
     return await _detail_response(note)
+
+
+@router.patch("/{note_id}/title", response_model=NoteDetail)
+async def update_title(
+    note_id: str,
+    payload: UpdateTitleRequest,
+    user: User = Depends(require_user),
+    session: Session = Depends(get_session),
+) -> NoteDetail:
+    note = _get_own_note_or_404(session, note_id, user)
+    note.title = payload.title.strip()[:200] or None
+    note.updated_at = utcnow()
+    session.add(note)
+    session.commit()
+    session.refresh(note)
+    return _to_detail(note)
 
 
 @router.put("/{note_id}/transcript", response_model=NoteDetail)

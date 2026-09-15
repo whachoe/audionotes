@@ -27,6 +27,15 @@
   </button>
   <span id="record-timer" class="record-timer"></span>
   <span id="record-error" class="record-error" role="alert"></span>
+
+  <form method="post" action="/notes/new" class="new-note-form">
+    <button type="submit" class="button button-secondary new-note-btn">
+      <svg class="icon" viewBox="0 0 24 24" width="18" height="18" fill="currentColor" aria-hidden="true">
+        <path d="M19,13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/>
+      </svg>
+      <span>New Markdown Note</span>
+    </button>
+  </form>
 </section>
 
 <form id="filter-form" method="get" action="/" class="filters">
