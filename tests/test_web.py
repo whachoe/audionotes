@@ -202,6 +202,51 @@ def test_saving_a_markdown_only_note_derives_its_title_from_the_first_heading(cl
         assert refreshed.title == "Grocery list"
 
 
+def test_autosave_persists_transcript_without_redirecting(client, test_user, env_setup):
+    """Phase 4.3 background autosave: unlike the explicit Save button, this
+    must answer with a small JSON ack (not a 303) since it fires every
+    couple of seconds while the user is still typing."""
+    note = _seed_note(test_user.id)
+    token = _seed_session(test_user)
+    client.cookies.set(SESSION_COOKIE_NAME, token)
+
+    response = client.post(f"/notes/{note.id}/transcript/autosave", data={"markdown": "# Autosaved content\n"})
+    assert response.status_code == 200
+    assert response.json()["title"] == "A test note"  # recorded note's title untouched
+
+    from backend import storage
+
+    assert storage.read_markdown(note.id) == "# Autosaved content\n"
+
+
+def test_autosave_derives_title_for_a_markdown_only_note_and_returns_it(client, test_user, env_setup):
+    note = _seed_note(test_user.id, audio_filename="", audio_original_filename=None, title=None)
+    token = _seed_session(test_user)
+    client.cookies.set(SESSION_COOKIE_NAME, token)
+
+    response = client.post(f"/notes/{note.id}/transcript/autosave", data={"markdown": "# Grocery list\n\n- milk\n"})
+    assert response.status_code == 200
+    assert response.json()["title"] == "Grocery list"
+
+    with db.session_scope() as session:
+        refreshed = session.get(Note, note.id)
+        assert refreshed.title == "Grocery list"
+
+
+def test_autosave_rejects_someone_elses_note(client, test_user):
+    with db.session_scope() as session:
+        other = User(google_sub="other-sub-4", email="other4@example.com")
+        session.add(other)
+        session.commit()
+        session.refresh(other)
+    note = _seed_note(other.id)
+
+    token = _seed_session(test_user)
+    client.cookies.set(SESSION_COOKIE_NAME, token)
+    response = client.post(f"/notes/{note.id}/transcript/autosave", data={"markdown": "hijacked"})
+    assert response.status_code == 404
+
+
 def test_saving_a_recorded_notes_transcript_does_not_touch_its_ai_generated_title(client, test_user, env_setup):
     note = _seed_note(test_user.id, title="AI-generated title")
     token = _seed_session(test_user)
