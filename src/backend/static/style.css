@@ -47,6 +47,13 @@ a:hover { text-decoration: underline; }
 }
 .button-primary:hover { background: #0c1a8c; text-decoration: none; }
 
+.button-secondary {
+  background: var(--surface);
+  color: var(--navy);
+  border: 1px solid var(--navy);
+}
+.button-secondary:hover { background: #eef0fb; text-decoration: none; }
+
 .link-button {
   background: none;
   border: none;
@@ -71,7 +78,22 @@ a:hover { text-decoration: underline; }
 .account { display: flex; align-items: center; gap: 0.75rem; font-size: 0.9rem; color: var(--text-muted); }
 
 .back-link { font-weight: 600; }
-.detail-title { font-size: 1.1rem; margin: 0; }
+
+.title-form { flex: 1 1 auto; min-width: 0; }
+.title-input {
+  width: 100%;
+  border: none;
+  border-bottom: 1px solid transparent;
+  background: transparent;
+  font-size: 1.1rem;
+  font-weight: 700;
+  font-family: inherit;
+  color: inherit;
+  padding: 0.15rem 0;
+}
+.title-input::placeholder { color: var(--text-muted); font-weight: 400; }
+.title-input:hover, .title-input:focus { border-bottom-color: var(--border); }
+.title-input:focus { outline: none; }
 
 .record-section {
   display: flex;
@@ -109,6 +131,16 @@ a:hover { text-decoration: underline; }
   font-weight: 600;
 }
 .record-error { color: var(--red); font-size: 0.9rem; }
+
+.new-note-form { margin: 0; }
+.new-note-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-width: 0;
+  padding: 0.9rem 1.5rem;
+  border-radius: 999px;
+}
 
 .filters {
   display: flex;
@@ -195,4 +227,17 @@ a:hover { text-decoration: underline; }
   }
   .record-btn .icon { width: 26px; height: 26px; }
   .record-label { display: none; }
+
+  /* Same icon-only treatment as the record button, so it fits the fixed
+     bottom bar alongside it instead of pushing it off-center. */
+  .new-note-btn {
+    width: 64px;
+    height: 64px;
+    min-width: 0;
+    flex: 0 0 auto;
+    padding: 0;
+    border-radius: 50%;
+    justify-content: center;
+  }
+  .new-note-btn span { display: none; }
 }

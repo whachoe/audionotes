@@ -32,5 +32,9 @@ class UpdateStatusRequest(BaseModel):
     status: NoteStatus
 
 
+class UpdateTitleRequest(BaseModel):
+    title: str = Field(default="")
+
+
 class UpdateTranscriptRequest(BaseModel):
     markdown: str = Field(default="")

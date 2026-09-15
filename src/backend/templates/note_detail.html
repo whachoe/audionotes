@@ -1,9 +1,23 @@
 {% extends "base.html" %}
 {% block title %}{{ row.title_display }} - Copywaste Notes{% endblock %}
+{% block extra_head %}
+<link rel="stylesheet" href="/static/easymde.min.css">
+{% endblock %}
 {% block content %}
 <header class="topbar">
   <a href="/" class="back-link">&larr; Back</a>
-  <h1 class="detail-title">{{ row.title_display }}</h1>
+  <form method="post" action="/notes/{{ note.id }}/title" class="title-form">
+    <input
+      type="text"
+      name="title"
+      value="{{ note.title or '' }}"
+      placeholder="Untitled note"
+      maxlength="200"
+      class="title-input"
+      aria-label="Note title"
+      onblur="if (this.value !== this.defaultValue) this.form.requestSubmit()"
+    >
+  </form>
 </header>
 
 <section class="detail-meta">
@@ -28,11 +42,30 @@
   </select>
 </form>
 
+{% if note.audio_filename %}
 <audio controls preload="none" src="{{ audio_url }}" class="audio-player"></audio>
+{% endif %}
 
 <form method="post" action="/notes/{{ note.id }}/transcript" class="transcript-form">
   <label for="markdown">Transcript (Markdown)</label>
   <textarea id="markdown" name="markdown" rows="18">{{ transcript_markdown }}</textarea>
   <button type="submit" class="button button-primary">Save</button>
 </form>
+{% endblock %}
+{% block extra_scripts %}
+<script src="/static/easymde.min.js"></script>
+<script>
+  // Phase 4.3: a real Markdown editor (toolbar, live preview, keyboard
+  // shortcuts) instead of a plain textarea. EasyMDE hides the original
+  // <textarea> and keeps it in sync on every change plus right before form
+  // submit (see its "submit" listener), so the existing plain <form
+  // method="post"> above needs no other changes to keep saving correctly.
+  new EasyMDE({
+    element: document.getElementById("markdown"),
+    spellChecker: false,
+    autofocus: true,
+    status: ["lines", "words"],
+    placeholder: "Write your note in Markdown…",
+  });
+</script>
 {% endblock %}

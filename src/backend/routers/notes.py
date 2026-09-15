@@ -16,7 +16,7 @@ from .. import storage
 from ..auth import require_user
 from ..db import get_session
 from ..models import Note, NoteStatus, ProcessingStatus, User, utcnow
-from ..schemas import NoteDetail, NoteListItem, UpdateStatusRequest, UpdateTranscriptRequest
+from ..schemas import NoteDetail, NoteListItem, UpdateStatusRequest, UpdateTitleRequest, UpdateTranscriptRequest
 
 router = APIRouter(prefix="/notes", tags=["notes"])
 
@@ -151,6 +151,22 @@ async def update_status(
     return _to_detail(note)
 
 
+@router.patch("/{note_id}/title", response_model=NoteDetail)
+async def update_title(
+    note_id: str,
+    payload: UpdateTitleRequest,
+    user: User = Depends(require_user),
+    session: Session = Depends(get_session),
+) -> NoteDetail:
+    note = _get_own_note_or_404(session, note_id, user)
+    note.title = payload.title.strip()[:200] or None
+    note.updated_at = utcnow()
+    session.add(note)
+    session.commit()
+    session.refresh(note)
+    return _to_detail(note)
+
+
 @router.put("/{note_id}/transcript", response_model=NoteDetail)
 async def update_transcript(
     note_id: str,
@@ -197,6 +213,10 @@ async def get_audio(
     session: Session = Depends(get_session),
 ) -> StreamingResponse:
     note = _get_own_note_or_404(session, note_id, user)
+    if not note.audio_filename:
+        # Markdown-only notes (Phase 4.2) have no audio at all - avoid
+        # resolving to the bare audio directory and streaming that back.
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Note has no audio")
     file_path = storage.audio_path(note.id, note.audio_filename)
     if not file_path.exists():
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Audio file missing")
