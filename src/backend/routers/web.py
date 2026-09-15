@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import List, Optional
 
 from fastapi import APIRouter, Cookie, Depends, Form, Query, Request
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy import false as sa_false
 from sqlmodel import Session as DbSession
@@ -277,18 +277,13 @@ def update_status_web(
     return RedirectResponse(url=f"/notes/{note_id}", status_code=303)
 
 
-@router.post("/notes/{note_id}/transcript")
-def update_transcript_web(
-    note_id: str,
-    markdown: str = Form(...),
-    user: User = Depends(require_web_user),
-    db: DbSession = Depends(get_session),
-):
-    note = db.get(Note, note_id)
-    if note is None or note.user_id != user.id:
-        return HTMLResponse("Note not found", status_code=404)
-
-    transcript_path = storage.write_markdown(note_id, markdown)
+def _save_transcript(note: Note, markdown: str, db: DbSession) -> None:
+    """Shared by the explicit Save button and the background autosave
+    endpoint below - both need to write the markdown file, keep a
+    still-titleless markdown-only note's title in sync, and bump
+    updated_at, just with a different response shape around it.
+    """
+    transcript_path = storage.write_markdown(note.id, markdown)
     note.transcript_path = transcript_path
     if not note.audio_filename and not note.title:
         # Markdown-only note (Phase 4.2) that's never had a title yet: seed
@@ -302,8 +297,46 @@ def update_transcript_web(
     note.updated_at = utcnow()
     db.add(note)
     db.commit()
+    db.refresh(note)
+
+
+@router.post("/notes/{note_id}/transcript")
+def update_transcript_web(
+    note_id: str,
+    markdown: str = Form(...),
+    user: User = Depends(require_web_user),
+    db: DbSession = Depends(get_session),
+):
+    note = db.get(Note, note_id)
+    if note is None or note.user_id != user.id:
+        return HTMLResponse("Note not found", status_code=404)
+
+    _save_transcript(note, markdown, db)
 
     return RedirectResponse(url=f"/notes/{note_id}", status_code=303)
+
+
+@router.post("/notes/{note_id}/transcript/autosave")
+def autosave_transcript_web(
+    note_id: str,
+    markdown: str = Form(...),
+    user: User = Depends(require_web_user),
+    db: DbSession = Depends(get_session),
+):
+    """Background autosave (Phase 4.3): the editor's JS calls this a couple
+    seconds after the user stops typing, so the note is actually persisted
+    as they write rather than only on an explicit click. Does the exact same
+    write as the Save button, but answers with a small JSON ack instead of a
+    redirect - a fetch() call every couple seconds shouldn't reload the page
+    out from under whatever the user is doing next.
+    """
+    note = db.get(Note, note_id)
+    if note is None or note.user_id != user.id:
+        return JSONResponse({"error": "Note not found"}, status_code=404)
+
+    _save_transcript(note, markdown, db)
+
+    return JSONResponse({"title": note.title, "saved_at": note.updated_at.isoformat()})
 
 
 @router.post("/notes/{note_id}/title")

@@ -9,6 +9,7 @@
   <form method="post" action="/notes/{{ note.id }}/title" class="title-form">
     <input
       type="text"
+      id="note-title"
       name="title"
       value="{{ note.title or '' }}"
       placeholder="Untitled note"
@@ -46,10 +47,13 @@
 <audio controls preload="none" src="{{ audio_url }}" class="audio-player"></audio>
 {% endif %}
 
-<form method="post" action="/notes/{{ note.id }}/transcript" class="transcript-form">
+<form method="post" action="/notes/{{ note.id }}/transcript" class="transcript-form" id="transcript-form">
   <label for="markdown">Transcript (Markdown)</label>
   <textarea id="markdown" name="markdown" rows="18">{{ transcript_markdown }}</textarea>
-  <button type="submit" class="button button-primary">Save</button>
+  <div class="transcript-actions">
+    <button type="submit" class="button button-primary">Save</button>
+    <span id="autosave-status" class="autosave-status" aria-live="polite"></span>
+  </div>
 </form>
 {% endblock %}
 {% block extra_scripts %}
@@ -60,12 +64,97 @@
   // <textarea> and keeps it in sync on every change plus right before form
   // submit (see its "submit" listener), so the existing plain <form
   // method="post"> above needs no other changes to keep saving correctly.
-  new EasyMDE({
+  const easymde = new EasyMDE({
     element: document.getElementById("markdown"),
     spellChecker: false,
     autofocus: true,
     status: ["lines", "words"],
     placeholder: "Write your note in Markdown…",
   });
+
+  (function () {
+    // Background autosave: POST /notes/{id}/transcript/autosave a couple
+    // seconds after the user stops typing, so the note is actually saved as
+    // they write instead of only when they remember to click Save. The
+    // Save button still works exactly as before (full page post + redirect)
+    // for anyone who wants an explicit, unambiguous save.
+    const AUTOSAVE_DELAY_MS = 2000;
+    const form = document.getElementById("transcript-form");
+    const statusEl = document.getElementById("autosave-status");
+    const titleInput = document.getElementById("note-title");
+    const autosaveUrl = form.action + "/autosave";
+
+    let debounceTimer = null;
+    let saving = false;
+    let resaveNeeded = false;
+    let lastSavedValue = easymde.value();
+
+    function setStatus(text, isError) {
+      statusEl.textContent = text;
+      statusEl.classList.toggle("autosave-status-error", !!isError);
+    }
+
+    async function autosave() {
+      if (saving) {
+        resaveNeeded = true;
+        return;
+      }
+      const value = easymde.value();
+      if (value === lastSavedValue) return;
+
+      saving = true;
+      setStatus("Saving…", false);
+      try {
+        const response = await fetch(autosaveUrl, {
+          method: "POST",
+          credentials: "same-origin",
+          headers: { "Content-Type": "application/x-www-form-urlencoded" },
+          body: "markdown=" + encodeURIComponent(value),
+        });
+        if (!response.ok) throw new Error("autosave failed: " + response.status);
+        const data = await response.json();
+        lastSavedValue = value;
+        setStatus("Saved", false);
+
+        // A markdown-only note derives its title from the transcript's
+        // first heading until one is set by hand (see _save_transcript) -
+        // reflect that here too, but only while the title field is still
+        // untouched, so we never clobber something the user is mid-typing.
+        if (data.title && !titleInput.value.trim()) {
+          titleInput.value = data.title;
+          titleInput.defaultValue = data.title;
+        }
+      } catch (err) {
+        setStatus("Autosave failed - use Save to retry", true);
+      } finally {
+        saving = false;
+        if (resaveNeeded) {
+          resaveNeeded = false;
+          autosave();
+        }
+      }
+    }
+
+    easymde.codemirror.on("change", () => {
+      setStatus("Unsaved changes", false);
+      clearTimeout(debounceTimer);
+      debounceTimer = setTimeout(autosave, AUTOSAVE_DELAY_MS);
+    });
+
+    // Only warn on navigations we didn't initiate ourselves - the Save
+    // button's own full-page submit shouldn't trigger a "leave site?" popup
+    // about the very save it's in the middle of performing.
+    let formSubmitting = false;
+    form.addEventListener("submit", () => {
+      formSubmitting = true;
+    });
+
+    window.addEventListener("beforeunload", (event) => {
+      if (!formSubmitting && easymde.value() !== lastSavedValue) {
+        event.preventDefault();
+        event.returnValue = "";
+      }
+    });
+  })();
 </script>
 {% endblock %}

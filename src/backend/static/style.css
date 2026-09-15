@@ -195,7 +195,9 @@ a:hover { text-decoration: underline; }
   border: 1px solid var(--border);
   resize: vertical;
 }
-.transcript-form .button { align-self: flex-start; }
+.transcript-actions { display: flex; align-items: center; gap: 0.75rem; }
+.autosave-status { font-size: 0.85rem; color: var(--text-muted); }
+.autosave-status-error { color: var(--red); }
 
 @media (max-width: 600px) {
   .topbar { padding: 0.85rem 1rem; }
