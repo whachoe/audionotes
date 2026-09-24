@@ -1,0 +1,83 @@
+{% extends "base.html" %}
+{% block title %}Settings - Copywaste Notes{% endblock %}
+{% block content %}
+<header class="topbar">
+  <a href="/" class="back-link">&larr; Back</a>
+  <h1 class="detail-title">Settings</h1>
+  <div class="account"><span>{{ user.email }}</span></div>
+</header>
+
+<section class="settings-section">
+  <h2 class="settings-heading">Save to Google Drive</h2>
+  <p class="settings-help">
+    Keep your recordings and notes in your own Google Drive instead of on this
+    server. Turning this off moves everything back here.
+  </p>
+
+  <label class="settings-toggle">
+    <input type="checkbox" id="drive-enabled" {% if settings.drive_enabled %}checked{% endif %}
+      {% if not drive_linked %}disabled{% endif %}>
+    <span>Save my notes to Google Drive</span>
+  </label>
+
+  {% if not drive_linked %}
+  <div class="settings-row">
+    <p class="settings-help">
+      Copywaste Notes needs your permission to use Drive before this can be switched on.
+    </p>
+    <a class="button button-primary" href="/api/google/auth/start?client=web&drive=1&return_to=/settings">
+      Connect Google Drive
+    </a>
+  </div>
+  {% else %}
+  <div class="settings-row">
+    <span class="settings-label">Folder</span>
+    <span id="chosen-folder" class="chosen-folder"
+      data-folder-id="{{ settings.drive_folder_id or '' }}">
+      {{ settings.drive_folder_name or default_folder_name + " (will be created)" }}
+    </span>
+    <button type="button" class="button button-secondary" id="choose-folder-btn">Choose folder…</button>
+  </div>
+  {% endif %}
+
+  <div class="settings-actions">
+    <button type="button" class="button button-primary" id="save-settings-btn"
+      {% if not drive_linked %}disabled{% endif %}>Save</button>
+    <span id="settings-status" class="settings-status" aria-live="polite">
+      {% if settings.migration_status.value == "running" %}
+        Moving your notes… ({{ settings.migration_done }}/{{ settings.migration_total }})
+      {% elif settings.migration_status.value == "failed" %}
+        Last move failed: {{ settings.migration_error }}
+      {% elif settings.migration_status.value == "done" and settings.migration_total %}
+        Moved {{ settings.migration_done }} note(s).
+      {% endif %}
+    </span>
+  </div>
+</section>
+
+<div id="folder-picker" class="folder-picker" hidden>
+  <div class="folder-picker-panel" role="dialog" aria-modal="true" aria-label="Choose a Drive folder">
+    <header class="folder-picker-header">
+      <button type="button" id="folder-up" class="link-button">&uarr; Up</button>
+      <strong id="folder-current">My Drive</strong>
+    </header>
+
+    <ul id="folder-list" class="folder-list"></ul>
+    <p id="folder-error" class="settings-error" role="alert"></p>
+
+    <div class="folder-picker-new">
+      <input type="text" id="new-folder-name" placeholder="New folder name" maxlength="120">
+      <button type="button" class="button button-secondary" id="create-folder-btn">Create</button>
+    </div>
+
+    <footer class="folder-picker-actions">
+      <button type="button" class="link-button" id="folder-cancel">Cancel</button>
+      <button type="button" class="button button-primary" id="folder-select">Use this folder</button>
+    </footer>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script src="/static/settings.js" defer></script>
+{% endblock %}

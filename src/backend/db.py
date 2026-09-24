@@ -99,6 +99,15 @@ def _add_missing_columns(engine: Engine) -> None:
         # pendingauthstate already shipped (Phase 3.1) without `client` -
         # added in Phase 3.2 for the web frontend's login flow.
         ("pendingauthstate", "client", "VARCHAR"),
+        # Phase 4 (Save to Google Drive). Existing notes predate the choice,
+        # and SQLite's ADD COLUMN leaves them NULL rather than applying the
+        # model default - which is exactly right for the two file ids, and
+        # handled for storage_location by the backfill below.
+        ("note", "storage_location", "VARCHAR"),
+        ("note", "audio_drive_file_id", "VARCHAR"),
+        ("note", "transcript_drive_file_id", "VARCHAR"),
+        ("googlecredential", "scopes", "VARCHAR"),
+        ("pendingauthstate", "return_to", "VARCHAR"),
     ]
     with engine.connect() as conn:
         existing_tables = {
@@ -118,11 +127,32 @@ def _add_missing_columns(engine: Engine) -> None:
         conn.commit()
 
 
+def _backfill_defaults(engine: Engine) -> None:
+    """ALTER TABLE ADD COLUMN fills existing rows with NULL - it does not
+    apply the model's default. For a plain Optional column that's fine, but
+    note.storage_location (Phase 4) is a non-optional enum whose absence
+    would otherwise read back as None, so every pre-Phase-4 note is
+    explicitly marked as living where it has always lived: on local disk.
+    """
+    with engine.connect() as conn:
+        tables = {
+            row[0]
+            for row in conn.exec_driver_sql("SELECT name FROM sqlite_master WHERE type='table'").fetchall()
+        }
+        if "note" not in tables:
+            return
+        columns = {row[1] for row in conn.exec_driver_sql("PRAGMA table_info(note)").fetchall()}
+        if "storage_location" in columns:
+            conn.exec_driver_sql("UPDATE note SET storage_location = 'local' WHERE storage_location IS NULL")
+        conn.commit()
+
+
 def init_db() -> None:
     engine = get_engine()
     _drop_incompatible_tables(engine)
     SQLModel.metadata.create_all(engine)
     _add_missing_columns(engine)
+    _backfill_defaults(engine)
 
 
 def get_session() -> Iterator[Session]:

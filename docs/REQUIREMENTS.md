@@ -46,4 +46,11 @@ This should all be deployed to https://notes.copywaste.org
 
 4. Phase 4
 ==========
-TBD
+- A new section in the settings: Save to Google Drive
+
+  - 1 checkbox field acting as the feature toggle for the 'Save to Google Drive' functionality
+  - Load folder-chooser widget: Button to link Google Drive and choose a folder to save the audionotes-data of the user. First we also need to make sure that user accepts extra scopes so our app can access the users' Google Drive. In the folder-chooser, we should also be able to create a new folder and choose that one. If the user does not choose a folder, we create a default `Copywaste Audionotes` folder and use that one to store all data.
+  - When the user saves the settings, the app will move all data of the user to the correct place: 
+    - if the user's data was previously saved locally (on the server): Move it to Google Drive folder
+    - if the user's data was saved on a Google Drive folder: Now download it and save it to the correct folder on the server.
+  - Whenever the user creates a new note, we save it to the appropriate spot (locally on server or on Google Drive folder).

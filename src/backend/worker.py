@@ -13,8 +13,8 @@ from typing import Optional
 from sqlmodel import Session, select
 
 from . import storage
-from .models import Note, ProcessingStatus
-from .services import date_recognition, google_calendar, summarization, transcription
+from .models import Note, ProcessingStatus, StorageLocation
+from .services import date_recognition, google_calendar, note_storage, summarization, transcription
 from .services.markdown_builder import build_markdown
 
 logger = logging.getLogger(__name__)
@@ -52,6 +52,51 @@ def _claim_next_queued_note(session: Session) -> Optional[Note]:
     return note
 
 
+def _transcribe_note(note: Note) -> str:
+    """Materialize the note's audio and transcribe it.
+
+    Both halves are blocking and both belong in the same executor hop: for a
+    Drive-resident note (Phase 4) the file has to be downloaded to a temp
+    path first, since faster-whisper wants a real filename.
+    """
+    with note_storage.audio_file_path(note) as audio_file_path:
+        return transcription.transcribe_audio(str(audio_file_path))
+
+
+def _finalize_note(session_factory, note_id: str, title, scheduled_at, markdown_content: str) -> None:
+    """Persist the finished note, then park it in the owner's chosen storage.
+
+    Runs in an executor because both the markdown write and the move can hit
+    the Drive API. A failed move is logged and left alone rather than
+    failing the note: the transcript is already safely written locally at
+    that point, and the next settings save will sweep it up.
+    """
+    session = session_factory()
+    try:
+        note = session.get(Note, note_id)
+        if note is None:
+            return
+        note.title = title
+        note.scheduled_at = scheduled_at
+        note.processing_status = ProcessingStatus.done
+        note_storage.write_markdown(session, note, markdown_content)
+        session.add(note)
+        session.commit()
+        session.refresh(note)
+
+        if note.user_id is None or note_storage.target_location(session, note.user_id) != StorageLocation.drive:
+            return
+        if note.storage_location == StorageLocation.drive:
+            return
+        settings = note_storage.get_user_settings(session, note.user_id)
+        try:
+            note_storage.move_note_to_drive(session, note, settings.drive_folder_id)
+        except Exception:  # noqa: BLE001 - the note itself is already saved
+            logger.exception("Couldn't move note %s to Drive; leaving it on local disk", note_id)
+    finally:
+        session.close()
+
+
 async def process_next_note(session_factory) -> Optional[str]:
     """Claim and fully process a single queued note, if any exist.
 
@@ -64,7 +109,6 @@ async def process_next_note(session_factory) -> Optional[str]:
         if note is None:
             return None
         note_id = note.id
-        audio_file_path = storage.audio_path(note.id, note.audio_filename)
     finally:
         session.close()
 
@@ -72,9 +116,7 @@ async def process_next_note(session_factory) -> Optional[str]:
 
     # --- Transcription (fatal on failure) ---
     try:
-        transcript_text = await loop.run_in_executor(
-            None, transcription.transcribe_audio, str(audio_file_path)
-        )
+        transcript_text = await loop.run_in_executor(None, _transcribe_note, note)
     except Exception as exc:  # noqa: BLE001
         logger.exception("Transcription failed for note %s", note_id)
         session = session_factory()
@@ -137,20 +179,9 @@ async def process_next_note(session_factory) -> Optional[str]:
         original_filename=original_filename,
         transcript_text=transcript_text,
     )
-    transcript_path = storage.write_markdown(note_id, markdown_content)
-
-    session = session_factory()
-    try:
-        note = session.get(Note, note_id)
-        if note is not None:
-            note.title = title
-            note.scheduled_at = scheduled_at
-            note.transcript_path = transcript_path
-            note.processing_status = ProcessingStatus.done
-            session.add(note)
-            session.commit()
-    finally:
-        session.close()
+    await loop.run_in_executor(
+        None, _finalize_note, session_factory, note_id, title, scheduled_at, markdown_content
+    )
 
     return note_id
 

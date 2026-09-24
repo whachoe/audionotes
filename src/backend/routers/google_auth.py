@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import logging
 import secrets
+from typing import Optional
 from urllib.parse import urlencode
 
 import httpx
@@ -34,7 +35,7 @@ from ..auth import SESSION_COOKIE_NAME
 from ..config import Settings, get_settings
 from ..db import get_session
 from ..models import GoogleCredential, Note, PendingAuthState, Session, User, utcnow
-from ..services import google_calendar
+from ..services import google_calendar, google_drive
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/google/auth", tags=["google"])
@@ -44,6 +45,12 @@ _TOKEN_ENDPOINT = "https://oauth2.googleapis.com/token"
 
 # Signing in and linking Calendar are the same consent screen.
 LOGIN_SCOPES = ["openid", "email", "profile", *google_calendar.SCOPES]
+
+# Drive (Phase 4) is deliberately NOT in LOGIN_SCOPES: full Drive access is
+# a big ask to put in front of someone who just wants to sign in, so it's
+# requested separately from the settings page (/start?drive=1) by whoever
+# actually turns the feature on.
+DRIVE_SCOPES = google_drive.SCOPES
 
 APP_AUTH_DEEP_LINK = "copywastenotes://auth"
 
@@ -59,28 +66,54 @@ def _require_google_configured(settings: Settings) -> None:
 @router.get("/start")
 def start(
     client: str = Query(default="mobile"),
+    drive: bool = Query(default=False),
+    return_to: str = Query(default=""),
     settings: Settings = Depends(get_settings),
     session: DbSession = Depends(get_session),
 ):
-    """Public by design - this IS the login entrypoint. See module docstring."""
+    """Public by design - this IS the login entrypoint. See module docstring.
+
+    ?drive=1 additionally asks for the Drive scope (Phase 4). That's the
+    same consent screen, just with more on it, and it re-uses the existing
+    callback: whatever Google grants is recorded on GoogleCredential.scopes.
+    """
     _require_google_configured(settings)
 
+    scopes = list(LOGIN_SCOPES)
+    if drive:
+        scopes += [scope for scope in DRIVE_SCOPES if scope not in scopes]
+
     state = secrets.token_urlsafe(24)
-    session.add(PendingAuthState(state=state, client=client))
+    session.add(PendingAuthState(state=state, client=client, return_to=_safe_return_to(return_to)))
     session.commit()
 
     params = {
         "client_id": settings.GOOGLE_CLIENT_ID,
         "redirect_uri": settings.GOOGLE_REDIRECT_URI,
         "response_type": "code",
-        "scope": " ".join(LOGIN_SCOPES),
+        "scope": " ".join(scopes),
         "access_type": "offline",
         # Forces Google to hand back a refresh_token every time, including
         # on a re-link, not just the very first authorization.
         "prompt": "consent",
+        # Keeps previously granted scopes attached to the new token, so
+        # adding Drive later doesn't silently drop Calendar.
+        "include_granted_scopes": "true",
         "state": state,
     }
     return RedirectResponse(f"{_AUTH_ENDPOINT}?{urlencode(params)}")
+
+
+def _safe_return_to(return_to: str) -> Optional[str]:
+    """Only ever redirect to a path on this site.
+
+    `state` is unguessable, but it still arrives from the open internet -
+    echoing an arbitrary caller-supplied URL back into a redirect is how you
+    end up as someone else's phishing hop.
+    """
+    if not return_to.startswith("/") or return_to.startswith("//"):
+        return None
+    return return_to
 
 
 @router.get("/callback")
@@ -101,6 +134,7 @@ async def callback(
     if pending is None:
         return _failure_page("Sign-in failed: invalid or expired request. Please try again from the app.")
     is_web = pending.client == "web"
+    return_to = pending.return_to
     session.delete(pending)
     session.commit()
 
@@ -171,6 +205,10 @@ async def callback(
     # Google only returns refresh_token when prompt=consent forced re-consent
     # (always, per /start above) - keep the old one as a fallback just in case.
     cred.refresh_token = payload.get("refresh_token") or cred.refresh_token
+    # What Google actually granted, which is not necessarily what we asked
+    # for - the user can untick individual scopes on the consent screen, and
+    # "is Drive linked?" (Phase 4) has to reflect their answer, not our ask.
+    cred.scopes = payload.get("scope") or cred.scopes
     cred.updated_at = utcnow()
     session.add(cred)
 
@@ -179,7 +217,7 @@ async def callback(
     session.commit()
 
     if is_web:
-        response = RedirectResponse(url="/", status_code=http_status.HTTP_302_FOUND)
+        response = RedirectResponse(url=return_to or "/", status_code=http_status.HTTP_302_FOUND)
         response.set_cookie(
             key=SESSION_COOKIE_NAME,
             value=app_session.token,
@@ -199,6 +237,7 @@ def get_status(user: User = Depends(auth.require_user), session: DbSession = Dep
         "email": user.email,
         "name": user.name,
         "calendar_linked": google_calendar.is_linked(session, user.id),
+        "drive_linked": google_drive.is_linked(session, user.id),
     }
 
 

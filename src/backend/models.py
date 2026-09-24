@@ -32,6 +32,25 @@ class ProcessingStatus(str, Enum):
     failed = "failed"
 
 
+class StorageLocation(str, Enum):
+    """Where a note's audio + markdown actually live (Phase 4).
+
+    Tracked per note, not just per user: a migration moves thousands of
+    files one at a time, and a note that hasn't been moved yet must still be
+    readable from wherever it currently is.
+    """
+
+    local = "local"
+    drive = "drive"
+
+
+class MigrationStatus(str, Enum):
+    idle = "idle"
+    running = "running"
+    done = "done"
+    failed = "failed"
+
+
 class User(SQLModel, table=True):
     """One row per signed-in Google account (Phase 3: multi-user)."""
 
@@ -67,19 +86,59 @@ class PendingAuthState(SQLModel, table=True):
 
     state: str = Field(primary_key=True)
     client: str = Field(default="mobile")
+    # Where to send a web client once the callback succeeds. Phase 4 grants
+    # the Drive scope from the settings page, which is where the user
+    # expects to land again afterwards - not back at the notes list.
+    return_to: Optional[str] = None
     created_at: datetime = Field(default_factory=utcnow)
 
 
 class GoogleCredential(SQLModel, table=True):
-    """One row per user holding their linked Google Calendar tokens.
+    """One row per user holding their linked Google tokens.
 
     Login and Calendar linking are the same OAuth flow (Phase 3) - this row
-    is created/updated in the same callback that creates the User.
+    is created/updated in the same callback that creates the User. Drive
+    (Phase 4) is *not* part of that flow: it's granted later, on demand,
+    from the settings page, which re-runs the same callback with the extra
+    scope requested - hence `scopes`, which records what Google actually
+    granted so we can tell "Drive is linked" from "only login + Calendar".
     """
 
     user_id: str = Field(foreign_key="user.id", primary_key=True)
     access_token: Optional[str] = None
     refresh_token: Optional[str] = None
+    # Space-separated, exactly as Google returns it in the token response.
+    scopes: Optional[str] = None
+    updated_at: datetime = Field(default_factory=utcnow)
+
+    def granted_scopes(self) -> set[str]:
+        return {scope for scope in (self.scopes or "").split() if scope}
+
+
+class UserSettings(SQLModel, table=True):
+    """Per-user, server-side settings (Phase 4: Save to Google Drive).
+
+    Distinct from the Android app's own settings, which are client-side
+    preferences (server URL, status filter) in SharedPreferences - these
+    have to live on the server because the server is what acts on them.
+    """
+
+    user_id: str = Field(foreign_key="user.id", primary_key=True)
+
+    # The feature toggle. When True, this user's notes live in Drive.
+    drive_enabled: bool = Field(default=False)
+    drive_folder_id: Optional[str] = None
+    # Kept alongside the id purely so the settings page can name the folder
+    # without a Drive round trip on every render.
+    drive_folder_name: Optional[str] = None
+
+    # Progress of the move triggered by the last settings save, so the
+    # settings page can report "moving 12/40" instead of just hanging.
+    migration_status: MigrationStatus = Field(default=MigrationStatus.idle)
+    migration_error: Optional[str] = None
+    migration_total: int = Field(default=0)
+    migration_done: int = Field(default=0)
+
     updated_at: datetime = Field(default_factory=utcnow)
 
 
@@ -107,3 +166,10 @@ class Note(SQLModel, table=True):
 
     # Set when the LLM recognizes a date/time in the transcript (Phase 2).
     scheduled_at: Optional[datetime] = None
+
+    # Phase 4: where this note's two files actually are. Notes always start
+    # local (whisper needs a real file on disk to transcribe) and are moved
+    # to Drive afterwards if the owner has the feature enabled.
+    storage_location: StorageLocation = Field(default=StorageLocation.local)
+    audio_drive_file_id: Optional[str] = None
+    transcript_drive_file_id: Optional[str] = None
