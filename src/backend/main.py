@@ -13,7 +13,7 @@ from fastapi.staticfiles import StaticFiles
 from . import db
 from .auth import RequireLoginRedirect
 from .config import get_settings
-from .routers import google_auth, health, notes, web
+from .routers import google_auth, health, notes, settings as settings_router, web
 from .worker import recover_stuck_jobs, run_worker_loop
 
 logging.basicConfig(level=logging.INFO)
@@ -56,6 +56,7 @@ def create_app() -> FastAPI:
     app.include_router(health.router)
     app.include_router(notes.router, prefix="/api")
     app.include_router(google_auth.router, prefix="/api")
+    app.include_router(settings_router.router, prefix="/api")
     app.include_router(web.router)
     app.mount("/static", StaticFiles(directory=str(_BACKEND_DIR / "static")), name="static")
 

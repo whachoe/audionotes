@@ -17,12 +17,12 @@ from sqlalchemy import false as sa_false
 from sqlmodel import Session as DbSession
 from sqlmodel import select
 
-from .. import storage
 from ..auth import SESSION_COOKIE_NAME, require_web_user, resolve_user_from_token
 from ..db import get_session
 from ..models import Note, NoteStatus, ProcessingStatus
 from ..models import Session as AppSession
 from ..models import User, utcnow
+from ..services import google_drive, note_storage
 from .notes import SortBy, SortOrder
 
 router = APIRouter(tags=["web"])
@@ -157,6 +157,31 @@ def notes_list_page(
     return response
 
 
+@router.get("/settings", response_class=HTMLResponse)
+def settings_page(
+    request: Request,
+    user: User = Depends(require_web_user),
+    db: DbSession = Depends(get_session),
+):
+    """Phase 4: the Save to Google Drive section.
+
+    Rendered server-side with the current state; the folder-chooser and the
+    save itself talk to the JSON API in routers/settings.py, so the Android
+    settings screen can reuse exactly the same endpoints.
+    """
+    storage_settings = note_storage.get_user_settings(db, user.id)
+    return templates.TemplateResponse(
+        request,
+        "settings.html",
+        {
+            "user": user,
+            "settings": storage_settings,
+            "drive_linked": google_drive.is_linked(db, user.id),
+            "default_folder_name": google_drive.DEFAULT_FOLDER_NAME,
+        },
+    )
+
+
 @router.patch("/partials/notes/{note_id}/status", response_class=HTMLResponse)
 def update_status_partial(
     request: Request,
@@ -197,7 +222,7 @@ def note_detail_page(
     if note is None or note.user_id != user.id:
         return HTMLResponse("Note not found", status_code=404)
 
-    transcript_markdown = storage.read_markdown(note.id)
+    transcript_markdown = note_storage.read_markdown(note)
     return templates.TemplateResponse(
         request,
         "note_detail.html",
@@ -245,8 +270,7 @@ def update_transcript_web(
     if note is None or note.user_id != user.id:
         return HTMLResponse("Note not found", status_code=404)
 
-    transcript_path = storage.write_markdown(note_id, markdown)
-    note.transcript_path = transcript_path
+    note_storage.write_markdown(db, note, markdown)
     note.updated_at = utcnow()
     db.add(note)
     db.commit()

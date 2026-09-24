@@ -9,13 +9,15 @@ import re
 from enum import Enum
 
 from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile, status
+from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import StreamingResponse
 from sqlmodel import Session, select
 
 from .. import storage
 from ..auth import require_user
 from ..db import get_session
-from ..models import Note, NoteStatus, ProcessingStatus, User, utcnow
+from ..models import Note, NoteStatus, ProcessingStatus, StorageLocation, User, utcnow
+from ..services import note_storage
 from ..schemas import NoteDetail, NoteListItem, UpdateStatusRequest, UpdateTranscriptRequest
 
 router = APIRouter(prefix="/notes", tags=["notes"])
@@ -54,7 +56,7 @@ def _to_list_item(note: Note) -> NoteListItem:
 
 
 def _to_detail(note: Note) -> NoteDetail:
-    transcript_markdown = storage.read_markdown(note.id)
+    transcript_markdown = note_storage.read_markdown(note)
     return NoteDetail(
         id=note.id,
         created_at=note.created_at,
@@ -70,6 +72,16 @@ def _to_detail(note: Note) -> NoteDetail:
         audio_original_filename=note.audio_original_filename,
         audio_mime_type=note.audio_mime_type,
     )
+
+
+async def _detail_response(note: Note) -> NoteDetail:
+    """_to_detail off the event loop.
+
+    Reading a note's markdown is a local file read for a local note but
+    a blocking Drive download for one that lives in Drive (Phase 4), and
+    the handlers below are async - so always take the threadpool hop.
+    """
+    return await run_in_threadpool(_to_detail, note)
 
 
 def _get_own_note_or_404(session: Session, note_id: str, user: User) -> Note:
@@ -104,7 +116,7 @@ async def create_note(
     session.commit()
     session.refresh(note)
 
-    return _to_detail(note)
+    return await _detail_response(note)
 
 
 @router.get("", response_model=list[NoteListItem])
@@ -132,7 +144,7 @@ async def get_note(
     note_id: str, user: User = Depends(require_user), session: Session = Depends(get_session)
 ) -> NoteDetail:
     note = _get_own_note_or_404(session, note_id, user)
-    return _to_detail(note)
+    return await _detail_response(note)
 
 
 @router.patch("/{note_id}/status", response_model=NoteDetail)
@@ -148,7 +160,7 @@ async def update_status(
     session.add(note)
     session.commit()
     session.refresh(note)
-    return _to_detail(note)
+    return await _detail_response(note)
 
 
 @router.put("/{note_id}/transcript", response_model=NoteDetail)
@@ -159,13 +171,12 @@ async def update_transcript(
     session: Session = Depends(get_session),
 ) -> NoteDetail:
     note = _get_own_note_or_404(session, note_id, user)
-    transcript_path = storage.write_markdown(note_id, payload.markdown)
-    note.transcript_path = transcript_path
+    await run_in_threadpool(note_storage.write_markdown, session, note, payload.markdown)
     note.updated_at = utcnow()
     session.add(note)
     session.commit()
     session.refresh(note)
-    return _to_detail(note)
+    return await _detail_response(note)
 
 
 def _iter_file_range(path, start: int, length: int):
@@ -197,13 +208,34 @@ async def get_audio(
     session: Session = Depends(get_session),
 ) -> StreamingResponse:
     note = _get_own_note_or_404(session, note_id, user)
-    file_path = storage.audio_path(note.id, note.audio_filename)
-    if not file_path.exists():
+    if not note_storage.audio_exists(note):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Audio file missing")
+
+    if note.storage_location == StorageLocation.drive:
+        # Drive serves whole files, not byte ranges, so there's nothing to
+        # gain from streaming it through - fetch once (off the event loop,
+        # googleapiclient is blocking) and slice in memory for Range
+        # requests, which is what the browser's audio element sends.
+        audio_bytes = await run_in_threadpool(note_storage.read_audio_bytes, note)
+        file_size = len(audio_bytes)
+
+        def read_full():
+            return iter((audio_bytes,))
+
+        def read_range(start: int, length: int):
+            return iter((audio_bytes[start : start + length],))
+    else:
+        file_path = storage.audio_path(note.id, note.audio_filename)
+        file_size = file_path.stat().st_size
+
+        def read_full():
+            return _iter_file_full(file_path)
+
+        def read_range(start: int, length: int):
+            return _iter_file_range(file_path, start, length)
 
     media_type = note.audio_mime_type or "application/octet-stream"
     filename = note.audio_original_filename or note.audio_filename
-    file_size = file_path.stat().st_size
 
     range_header = request.headers.get("range")
     base_headers = {
@@ -213,7 +245,7 @@ async def get_audio(
 
     if not range_header:
         headers = {**base_headers, "Content-Length": str(file_size)}
-        return StreamingResponse(_iter_file_full(file_path), media_type=media_type, headers=headers)
+        return StreamingResponse(read_full(), media_type=media_type, headers=headers)
 
     match = _RANGE_RE.match(range_header)
     if not match or (match.group(1) == "" and match.group(2) == ""):
@@ -243,7 +275,7 @@ async def get_audio(
         "Content-Length": str(length),
     }
     return StreamingResponse(
-        _iter_file_range(file_path, start, length),
+        read_range(start, length),
         status_code=status.HTTP_206_PARTIAL_CONTENT,
         media_type=media_type,
         headers=headers,
