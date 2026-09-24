@@ -234,6 +234,10 @@ a:hover { text-decoration: underline; }
   padding: 1rem;
   z-index: 20;
 }
+/* The `display: flex` above is an author rule, so it outranks the browser
+   default stylesheet's `[hidden] { display: none }` - without this the
+   overlay is permanently on screen and its backdrop eats every click. */
+.folder-picker[hidden] { display: none; }
 .folder-picker-panel {
   background: var(--surface);
   border-radius: var(--radius);
