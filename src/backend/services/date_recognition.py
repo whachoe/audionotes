@@ -33,11 +33,7 @@ from ..config import get_settings
 
 logger = logging.getLogger(__name__)
 
-# The languages a Belgian user is most likely to actually speak into the
-# app. Restricting this list (rather than leaving it unset, which makes
-# dateparser try every supported locale) keeps search_dates() fast.
 LANGUAGES = ["en", "nl", "fr"]
-
 MIN_MATCH_LENGTH = 4
 MAX_YEARS_FROM_REFERENCE = 3
 
