@@ -9,10 +9,12 @@ services:
     environment:
       DATA_DIR: /data
       OLLAMA_BASE_URL: http://ollama:11434
+      DUCKLING_BASE_URL: http://duckling:8000
     volumes:
       - ./data:/data
     depends_on:
       - ollama
+      - duckling
     expose:
       - "8000"
 
@@ -23,6 +25,19 @@ services:
       - ollama_data:/root/.ollama
     expose:
       - "11434"
+
+  duckling:
+    # Pinned by digest rather than a tag: rasa/duckling's version tags
+    # (e.g. 0.2.0.2-r4) turned out to point at different images than
+    # `latest` on Docker Hub, so this is the exact image actually verified
+    # against real transcripts (see date_recognition.py) - not a guess.
+    # To deliberately upgrade: pull `rasa/duckling:latest`, re-verify
+    # against tests/test_date_recognition_examples.py, then update this
+    # digest (and deploy/systemd/duckling.service's) together.
+    image: rasa/duckling@sha256:459e6033f87b0f3f525ed0d0066ae89cfe31d512f32ac1d469431fa6ce1bdef5
+    restart: unless-stopped
+    expose:
+      - "8000"
 
   caddy:
     image: caddy:2-alpine

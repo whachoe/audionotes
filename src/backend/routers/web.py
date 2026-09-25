@@ -7,11 +7,12 @@ personal note list.
 """
 from __future__ import annotations
 
+import re
 from pathlib import Path
 from typing import List, Optional
 
 from fastapi import APIRouter, Cookie, Depends, Form, Query, Request
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy import false as sa_false
 from sqlmodel import Session as DbSession
@@ -84,6 +85,26 @@ def _query_notes(db: DbSession, user: User, sort_by: SortBy, order: SortOrder, s
 
 def _filter_query_string(statuses: set[str]) -> str:
     return "&".join(f"status={value}" for value in statuses)
+
+
+_HEADING_RE = re.compile(r"^#{1,6}\s*(.+?)\s*#*$")
+
+
+def _derive_title_from_markdown(markdown: str) -> Optional[str]:
+    """Titles for markdown-only notes (Phase 4.2) have no recording to
+    summarize, so instead of running the transcript through the LLM
+    summarizer, the title just tracks the first non-blank line of the note
+    (its heading, if it has one) - simple, instant, and it's exactly what a
+    Markdown editor's own first line already looks like.
+    """
+    for line in markdown.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        match = _HEADING_RE.match(line)
+        text = match.group(1) if match else line
+        return text[:200] or None
+    return None
 
 
 @router.get("/login", response_class=HTMLResponse)
@@ -211,6 +232,28 @@ def update_status_partial(
     )
 
 
+@router.post("/notes/new")
+def create_markdown_note_web(
+    user: User = Depends(require_web_user),
+    db: DbSession = Depends(get_session),
+):
+    """Phase 4.2: start a new note with no recording - just an empty
+    transcript the user types straight into. Skips the audio/transcription
+    pipeline entirely (processing_status=done, audio_filename="") so the
+    background worker never picks it up and tries to "transcribe" nothing.
+    """
+    note = Note(
+        user_id=user.id,
+        audio_filename="",
+        status=NoteStatus.open,
+        processing_status=ProcessingStatus.done,
+    )
+    db.add(note)
+    db.commit()
+    db.refresh(note)
+    return RedirectResponse(url=f"/notes/{note.id}", status_code=303)
+
+
 @router.get("/notes/{note_id}", response_class=HTMLResponse)
 def note_detail_page(
     request: Request,
@@ -259,6 +302,29 @@ def update_status_web(
     return RedirectResponse(url=f"/notes/{note_id}", status_code=303)
 
 
+def _save_transcript(note: Note, markdown: str, db: DbSession) -> None:
+    """Shared by the explicit Save button and the background autosave
+    endpoint below - both need to write the markdown file, keep a
+    still-titleless markdown-only note's title in sync, and bump
+    updated_at, just with a different response shape around it.
+    """
+    transcript_path = storage.write_markdown(note.id, markdown)
+    note.transcript_path = transcript_path
+    if not note.audio_filename and not note.title:
+        # Markdown-only note (Phase 4.2) that's never had a title yet: seed
+        # it from the transcript's first heading/line so it isn't stuck
+        # showing "(untitled)" until the user separately fills in the title
+        # field. Only when it's still empty, though - once there's a title
+        # (from this, or typed into the title field below), further
+        # transcript saves must leave it alone rather than stomping on an
+        # edit the user made on purpose.
+        note.title = _derive_title_from_markdown(markdown)
+    note.updated_at = utcnow()
+    db.add(note)
+    db.commit()
+    db.refresh(note)
+
+
 @router.post("/notes/{note_id}/transcript")
 def update_transcript_web(
     note_id: str,
@@ -271,6 +337,44 @@ def update_transcript_web(
         return HTMLResponse("Note not found", status_code=404)
 
     note_storage.write_markdown(db, note, markdown)
+    return RedirectResponse(url=f"/notes/{note_id}", status_code=303)
+
+
+@router.post("/notes/{note_id}/transcript/autosave")
+def autosave_transcript_web(
+    note_id: str,
+    markdown: str = Form(...),
+    user: User = Depends(require_web_user),
+    db: DbSession = Depends(get_session),
+):
+    """Background autosave (Phase 4.3): the editor's JS calls this a couple
+    seconds after the user stops typing, so the note is actually persisted
+    as they write rather than only on an explicit click. Does the exact same
+    write as the Save button, but answers with a small JSON ack instead of a
+    redirect - a fetch() call every couple seconds shouldn't reload the page
+    out from under whatever the user is doing next.
+    """
+    note = db.get(Note, note_id)
+    if note is None or note.user_id != user.id:
+        return JSONResponse({"error": "Note not found"}, status_code=404)
+
+    note_storage.write_markdown(db, note, markdown)
+
+    return JSONResponse({"title": note.title, "saved_at": note.updated_at.isoformat()})
+
+
+@router.post("/notes/{note_id}/title")
+def update_title_web(
+    note_id: str,
+    title: str = Form(""),
+    user: User = Depends(require_web_user),
+    db: DbSession = Depends(get_session),
+):
+    note = db.get(Note, note_id)
+    if note is None or note.user_id != user.id:
+        return HTMLResponse("Note not found", status_code=404)
+
+    note.title = title.strip()[:200] or None
     note.updated_at = utcnow()
     db.add(note)
     db.commit()

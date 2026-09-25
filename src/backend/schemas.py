@@ -33,8 +33,6 @@ class UpdateStatusRequest(BaseModel):
 
 
 # --- Phase 4: Save to Google Drive ---------------------------------------
-
-
 class StorageSettings(BaseModel):
     drive_enabled: bool = False
     drive_folder_id: Optional[str] = None
@@ -70,7 +68,12 @@ class DriveFolderList(BaseModel):
 class CreateDriveFolderRequest(BaseModel):
     name: str
     parent_id: Optional[str] = None
-
+    
+    
+class UpdateTitleRequest(BaseModel):
+    title: str = Field(default="")
+    
 
 class UpdateTranscriptRequest(BaseModel):
     markdown: str = Field(default="")
+

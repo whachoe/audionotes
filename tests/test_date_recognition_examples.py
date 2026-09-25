@@ -1,4 +1,7 @@
-"""Diagnostic harness for dateparser mismatches found in real transcripts.
+"""Diagnostic harness for date/time-recognition mismatches found in real
+transcripts (Phase 4: backed by Duckling). Requires a reachable Duckling
+server (DUCKLING_BASE_URL) - skipped automatically otherwise, see
+conftest.duckling_reachable().
 
 Add each mismatch you find to EXAMPLES below (transcript, reference time,
 and what you expected it to resolve to - or None if it shouldn't match at
@@ -6,10 +9,10 @@ all), then run:
 
     pytest tests/test_date_recognition_examples.py -v
 
-A failing case prints every candidate dateparser.search found, whether it
-was accepted or rejected, and why (via the DEBUG logging in
-date_recognition.py) - so you can see exactly where a mismatch happens
-instead of just "wrong result".
+A failing case prints every candidate Duckling found (across all three
+languages), whether it was accepted or rejected, and why (via the DEBUG
+logging in date_recognition.py) - so you can see exactly where a mismatch
+happens instead of just "wrong result".
 """
 from __future__ import annotations
 
@@ -21,6 +24,9 @@ from typing import Optional, Tuple
 import pytest
 
 from backend.services.date_recognition import find_scheduled_at
+from tests.conftest import duckling_reachable
+
+pytestmark = pytest.mark.skipif(not duckling_reachable(), reason="Duckling server not reachable")
 
 REFERENCE = datetime(2026, 9, 3, 10, 0, tzinfo=timezone.utc)  # a Thursday
 
@@ -80,5 +86,5 @@ def test_example(example: Example, caplog: pytest.LogCaptureFixture) -> None:
             f"\ntranscript: {example.transcript!r}\n"
             f"expected:   {example.expected}\n"
             f"got:        {actual}\n"
-            f"--- dateparser trace ---\n{trace}\n"
+            f"--- duckling trace ---\n{trace}\n"
         )

@@ -1,9 +1,9 @@
 """Title generation via a local Ollama server. Non-fatal on failure.
 
 Date/time recognition used to be folded into this same LLM call (Phase 2's
-original implementation); it now runs separately via the `dateparser`
-library instead - see services/date_recognition.py - so this module is back
-to doing exactly one thing.
+original implementation); it now runs separately (see
+services/date_recognition.py) so this module is back to doing exactly one
+thing.
 """
 from __future__ import annotations
 

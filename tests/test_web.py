@@ -164,6 +164,166 @@ def test_transcript_update_web_persists(client, test_user, env_setup):
     assert storage.read_markdown(note.id) == new_markdown
 
 
+def test_create_markdown_note_redirects_to_new_note_detail_page(client, test_user, env_setup):
+    """Phase 4.2: the "New Markdown Note" button skips recording entirely."""
+    token = _seed_session(test_user)
+    client.cookies.set(SESSION_COOKIE_NAME, token)
+
+    response = client.post("/notes/new", follow_redirects=False)
+    assert response.status_code == 303
+
+    note_id = response.headers["location"].rsplit("/", 1)[-1]
+    with db.session_scope() as session:
+        note = session.get(Note, note_id)
+        assert note is not None
+        assert note.user_id == test_user.id
+        assert note.audio_filename == ""
+        assert note.processing_status == ProcessingStatus.done
+        assert note.status.value == "open"
+        assert note.title is None
+
+    detail = client.get(response.headers["location"])
+    assert detail.status_code == 200
+    assert "(untitled)" in detail.text
+    assert "<audio" not in detail.text  # no recording to play back
+
+
+def test_saving_a_markdown_only_note_derives_its_title_from_the_first_heading(client, test_user, env_setup):
+    note = _seed_note(test_user.id, audio_filename="", audio_original_filename=None, title=None)
+    token = _seed_session(test_user)
+    client.cookies.set(SESSION_COOKIE_NAME, token)
+
+    markdown = "# Grocery list\n\n- milk\n- eggs\n"
+    response = client.post(f"/notes/{note.id}/transcript", data={"markdown": markdown}, follow_redirects=False)
+    assert response.status_code == 303
+
+    with db.session_scope() as session:
+        refreshed = session.get(Note, note.id)
+        assert refreshed.title == "Grocery list"
+
+
+def test_autosave_persists_transcript_without_redirecting(client, test_user, env_setup):
+    """Phase 4.3 background autosave: unlike the explicit Save button, this
+    must answer with a small JSON ack (not a 303) since it fires every
+    couple of seconds while the user is still typing."""
+    note = _seed_note(test_user.id)
+    token = _seed_session(test_user)
+    client.cookies.set(SESSION_COOKIE_NAME, token)
+
+    response = client.post(f"/notes/{note.id}/transcript/autosave", data={"markdown": "# Autosaved content\n"})
+    assert response.status_code == 200
+    assert response.json()["title"] == "A test note"  # recorded note's title untouched
+
+    from backend import storage
+
+    assert storage.read_markdown(note.id) == "# Autosaved content\n"
+
+
+def test_autosave_derives_title_for_a_markdown_only_note_and_returns_it(client, test_user, env_setup):
+    note = _seed_note(test_user.id, audio_filename="", audio_original_filename=None, title=None)
+    token = _seed_session(test_user)
+    client.cookies.set(SESSION_COOKIE_NAME, token)
+
+    response = client.post(f"/notes/{note.id}/transcript/autosave", data={"markdown": "# Grocery list\n\n- milk\n"})
+    assert response.status_code == 200
+    assert response.json()["title"] == "Grocery list"
+
+    with db.session_scope() as session:
+        refreshed = session.get(Note, note.id)
+        assert refreshed.title == "Grocery list"
+
+
+def test_autosave_rejects_someone_elses_note(client, test_user):
+    with db.session_scope() as session:
+        other = User(google_sub="other-sub-4", email="other4@example.com")
+        session.add(other)
+        session.commit()
+        session.refresh(other)
+    note = _seed_note(other.id)
+
+    token = _seed_session(test_user)
+    client.cookies.set(SESSION_COOKIE_NAME, token)
+    response = client.post(f"/notes/{note.id}/transcript/autosave", data={"markdown": "hijacked"})
+    assert response.status_code == 404
+
+
+def test_saving_a_recorded_notes_transcript_does_not_touch_its_ai_generated_title(client, test_user, env_setup):
+    note = _seed_note(test_user.id, title="AI-generated title")
+    token = _seed_session(test_user)
+    client.cookies.set(SESSION_COOKIE_NAME, token)
+
+    response = client.post(
+        f"/notes/{note.id}/transcript",
+        data={"markdown": "# Something else entirely\n"},
+        follow_redirects=False,
+    )
+    assert response.status_code == 303
+
+    with db.session_scope() as session:
+        refreshed = session.get(Note, note.id)
+        assert refreshed.title == "AI-generated title"
+
+
+def test_editing_the_title_saves_it(client, test_user, env_setup):
+    note = _seed_note(test_user.id, title="Original title")
+    token = _seed_session(test_user)
+    client.cookies.set(SESSION_COOKIE_NAME, token)
+
+    response = client.post(f"/notes/{note.id}/title", data={"title": "  Renamed  "}, follow_redirects=False)
+    assert response.status_code == 303
+    assert response.headers["location"] == f"/notes/{note.id}"
+
+    with db.session_scope() as session:
+        refreshed = session.get(Note, note.id)
+        assert refreshed.title == "Renamed"  # whitespace trimmed
+
+    detail = client.get(f"/notes/{note.id}")
+    assert 'value="Renamed"' in detail.text
+
+
+def test_clearing_the_title_field_leaves_the_note_untitled(client, test_user, env_setup):
+    note = _seed_note(test_user.id, title="Original title")
+    token = _seed_session(test_user)
+    client.cookies.set(SESSION_COOKIE_NAME, token)
+
+    client.post(f"/notes/{note.id}/title", data={"title": "   "})
+
+    with db.session_scope() as session:
+        refreshed = session.get(Note, note.id)
+        assert refreshed.title is None
+
+
+def test_editing_the_title_directly_is_not_overwritten_by_a_later_transcript_save(client, test_user, env_setup):
+    """A markdown-only note (Phase 4.2) auto-derives its title once from the
+    transcript's first heading (see test_saving_a_markdown_only_note_...
+    above), but once the user has set a title - by hand, via the title
+    field - further transcript edits must not clobber that choice."""
+    note = _seed_note(test_user.id, audio_filename="", audio_original_filename=None, title="Grocery list")
+    token = _seed_session(test_user)
+    client.cookies.set(SESSION_COOKIE_NAME, token)
+
+    client.post(f"/notes/{note.id}/title", data={"title": "Weekly shopping"})
+    client.post(f"/notes/{note.id}/transcript", data={"markdown": "# Grocery list\n\n- milk\n"})
+
+    with db.session_scope() as session:
+        refreshed = session.get(Note, note.id)
+        assert refreshed.title == "Weekly shopping"
+
+
+def test_title_update_rejects_someone_elses_note(client, test_user):
+    with db.session_scope() as session:
+        other = User(google_sub="other-sub-3", email="other3@example.com")
+        session.add(other)
+        session.commit()
+        session.refresh(other)
+    note = _seed_note(other.id)
+
+    token = _seed_session(test_user)
+    client.cookies.set(SESSION_COOKIE_NAME, token)
+    response = client.post(f"/notes/{note.id}/title", data={"title": "Hijacked"})
+    assert response.status_code == 404
+
+
 def test_logout_clears_session_and_cookie(client, test_user):
     token = _seed_session(test_user)
     client.cookies.set(SESSION_COOKIE_NAME, token)
