@@ -363,3 +363,118 @@ def test_editing_a_drive_notes_transcript_writes_back_to_drive(
     with db.session_scope() as session:
         refreshed = session.get(Note, note.id)
         assert fake_drive.files[refreshed.transcript_drive_file_id].decode() == "# After\n"
+
+
+# --- The web frontend's save paths (Phase 4.2/4.3 editor) ------------------
+
+
+def test_web_transcript_save_persists_a_newly_created_drive_file_id(
+    client, test_user, fake_drive, env_setup
+):
+    """A Drive note that has no markdown file yet - a markdown-only note
+    (Phase 4.2) that was migrated before it was ever saved - takes the
+    *upload* branch, which mints a brand new Drive file id. write_markdown
+    leaves committing to its caller, so if the web route doesn't commit, the
+    bytes land in Drive and the id pointing at them is thrown away: the note
+    reads back empty forever.
+    """
+    from backend.auth import SESSION_COOKIE_NAME
+    from backend.models import Session as AppSession
+
+    _link_drive(test_user)
+    folder = fake_drive.create_folder(test_user.id, "Notes folder")
+
+    # A markdown-only note: no audio, and no markdown written yet.
+    with db.session_scope() as session:
+        note = Note(
+            user_id=test_user.id,
+            audio_filename="",
+            processing_status=ProcessingStatus.done,
+            storage_location=StorageLocation.drive,
+        )
+        session.add(note)
+        settings = note_storage.get_user_settings(session, test_user.id)
+        settings.drive_enabled = True
+        settings.drive_folder_id = folder["id"]
+        settings.drive_folder_name = folder["name"]
+        session.add(settings)
+        session.commit()
+        session.refresh(note)
+        note_id = note.id
+
+        app_session = AppSession(user_id=test_user.id)
+        session.add(app_session)
+        session.commit()
+        session.refresh(app_session)
+        client.cookies.set(SESSION_COOKIE_NAME, app_session.token)
+
+    response = client.post(
+        f"/notes/{note_id}/transcript", data={"markdown": "# Typed straight in\n"}, follow_redirects=False
+    )
+    assert response.status_code == 303
+
+    with db.session_scope() as session:
+        refreshed = session.get(Note, note_id)
+        assert refreshed.transcript_drive_file_id, "the new Drive file id was not persisted"
+        assert note_storage.read_markdown(refreshed) == "# Typed straight in\n"
+
+
+def test_web_transcript_save_bumps_updated_at(client, test_user, env_setup):
+    from backend.auth import SESSION_COOKIE_NAME
+    from backend.models import Session as AppSession
+
+    note = _seed_local_note(test_user.id, "# Before\n")
+    with db.session_scope() as session:
+        before = session.get(Note, note.id).updated_at
+        app_session = AppSession(user_id=test_user.id)
+        session.add(app_session)
+        session.commit()
+        session.refresh(app_session)
+        client.cookies.set(SESSION_COOKIE_NAME, app_session.token)
+
+    client.post(f"/notes/{note.id}/transcript", data={"markdown": "# After\n"})
+
+    with db.session_scope() as session:
+        assert session.get(Note, note.id).updated_at > before
+
+
+def test_a_new_markdown_note_is_born_in_the_users_chosen_storage(
+    client, test_user, fake_drive, env_setup
+):
+    """A markdown-only note never goes through the worker, so nothing else
+    would ever move it to Drive - if it isn't created there it stays on
+    local disk indefinitely, even though the user asked for Drive."""
+    from backend.auth import SESSION_COOKIE_NAME
+    from backend.models import Session as AppSession
+
+    _link_drive(test_user)
+    folder = fake_drive.create_folder(test_user.id, "Notes folder")
+
+    with db.session_scope() as session:
+        settings = note_storage.get_user_settings(session, test_user.id)
+        settings.drive_enabled = True
+        settings.drive_folder_id = folder["id"]
+        settings.drive_folder_name = folder["name"]
+        session.add(settings)
+        app_session = AppSession(user_id=test_user.id)
+        session.add(app_session)
+        session.commit()
+        session.refresh(app_session)
+        client.cookies.set(SESSION_COOKIE_NAME, app_session.token)
+
+    created = client.post("/notes/new", follow_redirects=False)
+    assert created.status_code == 303
+    note_id = created.headers["location"].rsplit("/", 1)[-1]
+
+    with db.session_scope() as session:
+        assert session.get(Note, note_id).storage_location == StorageLocation.drive
+
+    # ...and typing into it round-trips through Drive, not local disk.
+    client.post(f"/notes/{note_id}/transcript", data={"markdown": "# Typed\n\nbody\n"})
+
+    with db.session_scope() as session:
+        note = session.get(Note, note_id)
+        assert note.title == "Typed"          # title derivation still runs
+        assert note.transcript_drive_file_id  # and the id was committed
+        assert note_storage.read_markdown(note) == "# Typed\n\nbody\n"
+    assert not storage.markdown_path(note_id).exists()
