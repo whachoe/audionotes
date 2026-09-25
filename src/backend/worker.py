@@ -154,8 +154,8 @@ async def process_next_note(session_factory) -> Optional[str]:
         words = transcript_text.strip().split()
         title = " ".join(words[:10]) if words else "Untitled note"
 
-    # --- Date/time recognition (Phase 2, dateparser-based; non-fatal, runs
-    # in a thread since dateparser's search is somewhat CPU-heavy) ---
+    # --- Date/time recognition (Phase 2/4, Duckling-based; non-fatal, runs
+    # in a thread since it makes blocking HTTP calls) ---
     try:
         scheduled_at = await loop.run_in_executor(
             None, date_recognition.find_scheduled_at, transcript_text, created_at

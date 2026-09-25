@@ -1,13 +1,15 @@
 from __future__ import annotations
 
 import shutil
+from functools import lru_cache
 from pathlib import Path
 
+import httpx
 import pytest
 from fastapi.testclient import TestClient
 
 from backend import db
-from backend.config import reset_settings_cache
+from backend.config import get_settings, reset_settings_cache
 from backend.main import create_app
 from backend.models import Session as AppSession
 from backend.models import User
@@ -17,20 +19,55 @@ FIXTURES_DIR = Path(__file__).parent / "fixtures"
 SAMPLE_WAV = FIXTURES_DIR / "sample.wav"
 
 # Deliberately has no date/time-shaped words in it, so date_recognition
-# (which runs for real in tests - it's local and deterministic, no server to
-# mock) naturally finds nothing and scheduled_at stays None by default.
+# naturally finds nothing and scheduled_at stays None by default, regardless
+# of whether Duckling is reachable.
 FAKE_TRANSCRIPT = "this is a fake transcript used only for automated testing purposes please"
 FAKE_TITLE = "Fake Generated Title"
+
+
+@lru_cache
+def duckling_reachable() -> bool:
+    """Used to skip tests that exercise date_recognition for real (Phase 4:
+    it calls out to a Duckling HTTP service, unlike the old dateparser
+    implementation which was local/deterministic with nothing to reach).
+    """
+    try:
+        httpx.get(get_settings().DUCKLING_BASE_URL, timeout=1.0)
+        return True
+    except httpx.HTTPError:
+        return False
+
+
+@lru_cache
+def ollama_reachable() -> bool:
+    """Used to skip tests that exercise summarization.generate_title for
+    real against Ollama. Only confirms the server itself is up - not that
+    OLLAMA_MODEL has actually been pulled there (see
+    test_summarization_integration.py, which surfaces that case as an
+    assertion failure with a pointer to `ollama pull`, rather than a skip).
+    """
+    try:
+        httpx.get(get_settings().OLLAMA_BASE_URL, timeout=1.0)
+        return True
+    except httpx.HTTPError:
+        return False
+
+
+# deploy/docker-compose.test.yml spins up real Ollama/Duckling instances for
+# tests that want them (see the two _reachable() helpers above) with ports
+# published on config.py's defaults - see that file for the run command.
 
 
 @pytest.fixture(autouse=True)
 def patch_services(monkeypatch):
     """Never hit a real whisper model or a real Ollama server in tests.
 
-    date_recognition isn't mocked here - it's local/deterministic (no
-    network, no server), so it's safe (and more meaningful) to let it run
-    for real; tests that care about a specific scheduled_at either craft a
-    transcript that contains one or monkeypatch it explicitly.
+    date_recognition isn't mocked here either - if Duckling isn't running,
+    it fails closed (returns None, see its own "must never raise" contract)
+    same as if it just found nothing, so it's safe to leave real for tests
+    that don't care about a specific scheduled_at. Tests that do either craft
+    a transcript and require Duckling (see duckling_reachable()) or
+    monkeypatch find_scheduled_at directly.
     """
 
     def fake_transcribe(path: str) -> str:

@@ -1,14 +1,22 @@
-"""Regression tests for the dateparser-based date/time recognition -
-several of these lock in fixes for real bugs found while building this
-(see the module docstring in date_recognition.py): search_dates() can
-resolve a well-formed match to the wrong year, truncate its own match
-short, or misread a short word as an abbreviated weekday.
+"""Regression tests for Duckling-based date/time recognition (Phase 4).
+Requires a reachable Duckling server (DUCKLING_BASE_URL) - skipped
+automatically otherwise, see conftest.duckling_reachable().
+
+Some of these lock in behavior that used to be broken under the earlier
+dateparser-based implementation: a short, low-information match like the
+bare word "We" shouldn't be misread as a date, and a wildly-wrong year
+should never come out the other end.
 """
 from __future__ import annotations
 
 from datetime import datetime, timezone
 
+import pytest
+
 from backend.services.date_recognition import find_scheduled_at
+from tests.conftest import duckling_reachable
+
+pytestmark = pytest.mark.skipif(not duckling_reachable(), reason="Duckling server not reachable")
 
 REFERENCE = datetime(2026, 9, 3, 10, 0, tzinfo=timezone.utc)  # a Thursday
 REFERENCE_YEAR = 2026
