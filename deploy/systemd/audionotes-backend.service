@@ -1,17 +1,13 @@
 [Unit]
 Description=cjpa's Notes backend (FastAPI/uvicorn)
-# Soft ordering only (not Requires=) - date_recognition already treats a
-# not-yet-up Duckling as "no date found", so the backend must still start
-# fine even if duckling.service is slow to come up or down entirely.
 After=network.target duckling.service
 
 [Service]
 Type=simple
-# Adjust to wherever you check out/copy the repo on the server.
-WorkingDirectory=/opt/audionotes
+WorkingDirectory=/home/data/web/notes.copywaste.org/audionotes
 # --app-dir src makes `backend` importable as a top-level package, matching
 # pyproject.toml's pythonpath used for local dev/tests.
-ExecStart=/opt/audionotes/.venv/bin/uvicorn backend.main:app --app-dir src --host 127.0.0.1 --port 8000
+ExecStart=/home/data/web/notes.copywaste.org/audionotes/.venv/bin/uvicorn backend.main:app --app-dir src --host 127.0.0.1 --port 8000
 Restart=always
 RestartSec=3
 
@@ -39,7 +35,7 @@ Environment=GOOGLE_CLIENT_ID=
 Environment=GOOGLE_CLIENT_SECRET=
 Environment=GOOGLE_REDIRECT_URI=https://notes.copywaste.org/api/google/auth/callback
 Environment=GOOGLE_CALENDAR_ID=primary
-Environment=ALLOWED_GOOGLE_EMAILS=whachoe@gmail.com,jo.giraerts@gmail.com,cuppens.katrien@gmail.com
+Environment=ALLOWED_GOOGLE_EMAILS=whachoe@gmail.com,jo.giraerts@gmail.com,cuppens.katrien@gmail.com,jnuyens@gmail.com
 
 [Install]
 WantedBy=multi-user.target
