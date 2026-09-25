@@ -85,6 +85,76 @@ a:hover { text-decoration: underline; }
 .topbar h1 { font-size: 1.25rem; margin: 0; }
 .account { display: flex; align-items: center; gap: 0.75rem; font-size: 0.9rem; color: var(--text-muted); }
 
+/* Account menu: the signed-in name in the top-right, opening a small
+   Settings / Sign out menu. */
+.account-menu { position: relative; }
+
+.account-trigger {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.4rem 0.6rem;
+  border-radius: 999px;
+  cursor: pointer;
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--navy);
+  /* Drop the native disclosure triangle - we draw our own caret. */
+  list-style: none;
+}
+.account-trigger::-webkit-details-marker { display: none; }
+.account-trigger:hover { background: #eef0fb; }
+.account-menu[open] .account-trigger { background: #eef0fb; }
+
+.account-name { max-width: 14rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.account-caret { flex: 0 0 auto; transition: transform 0.15s ease; }
+.account-menu[open] .account-caret { transform: rotate(180deg); }
+
+/* Kept `display: none` by default and only shown via [open]: a <details>
+   child with an unconditional `display` can render even while the element
+   is closed, the same cascade trap that kept the folder picker on screen. */
+.account-dropdown { display: none; }
+.account-menu[open] .account-dropdown {
+  display: flex;
+  flex-direction: column;
+  position: absolute;
+  right: 0;
+  top: calc(100% + 0.4rem);
+  min-width: 13rem;
+  padding: 0.35rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+  z-index: 30;
+}
+.account-email {
+  padding: 0.5rem 0.6rem;
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 0.35rem;
+  overflow-wrap: anywhere;
+}
+.account-dropdown a,
+.account-signout {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 0.55rem 0.6rem;
+  border: none;
+  border-radius: 6px;
+  background: none;
+  font: inherit;
+  font-size: 0.9rem;
+  color: var(--text);
+  cursor: pointer;
+  text-decoration: none;
+}
+.account-dropdown a:hover,
+.account-signout:hover { background: #eef0fb; text-decoration: none; }
+.account-signout { color: var(--red); }
+
 .back-link { font-weight: 600; }
 
 .title-form { flex: 1 1 auto; min-width: 0; }

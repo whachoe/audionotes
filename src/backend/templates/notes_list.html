@@ -8,11 +8,23 @@
 
 <header class="topbar">
   <img src="/static/img/copywaste_notes_logo.png" alt="Copywaste Notes Logo" class="logo" height="35" width="125">
-  <div class="account">
-    <span>{{ user.email }}</span>
-    <a href="/settings">Settings</a>
-    <form method="post" action="/logout"><button type="submit" class="link-button">Sign out</button></form>
-  </div>
+  {# <details> rather than a JS-toggled div: it opens, closes and takes
+     keyboard focus on its own, so the menu still works if app.js hasn't
+     loaded (or fails). The JS only adds the niceties - click-outside and
+     Escape to close. #}
+  <details class="account-menu">
+    <summary class="account-trigger">
+      <span class="account-name">{{ user.name or user.email }}</span>
+      <svg class="account-caret" viewBox="0 0 24 24" width="16" height="16" fill="currentColor" aria-hidden="true">
+        <path d="M7,10l5,5l5,-5z"/>
+      </svg>
+    </summary>
+    <div class="account-dropdown">
+      <span class="account-email">{{ user.email }}</span>
+      <a href="/settings">Settings</a>
+      <form method="post" action="/logout"><button type="submit" class="account-signout">Sign out</button></form>
+    </div>
+  </details>
 </header>
 
 <section class="record-section">

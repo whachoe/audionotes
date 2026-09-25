@@ -103,3 +103,26 @@
     }
   });
 })();
+
+// Account menu: <details> already handles opening, closing and keyboard
+// focus by itself, so this only adds what it can't do natively - dismissing
+// when you click elsewhere or press Escape. Without it the menu stays open
+// until you click the trigger again, which feels broken next to every other
+// menu on the web.
+(function () {
+  const menu = document.querySelector(".account-menu");
+  if (!menu) return; // not on this page
+
+  document.addEventListener("click", (event) => {
+    if (menu.open && !menu.contains(event.target)) {
+      menu.open = false;
+    }
+  });
+
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && menu.open) {
+      menu.open = false;
+      menu.querySelector("summary").focus();
+    }
+  });
+})();
