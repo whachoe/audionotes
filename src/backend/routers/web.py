@@ -241,12 +241,20 @@ def create_markdown_note_web(
     transcript the user types straight into. Skips the audio/transcription
     pipeline entirely (processing_status=done, audio_filename="") so the
     background worker never picks it up and tries to "transcribe" nothing.
+
+    Because it skips the worker it also skips worker._finalize_note, which
+    is what normally parks a finished note in the owner's Drive folder - so
+    the storage location has to be decided here instead, at birth. There
+    are no files to move yet, so it costs nothing to start in the right
+    place; getting this wrong would quietly strand every typed note on
+    local disk for a user who has Drive switched on.
     """
     note = Note(
         user_id=user.id,
         audio_filename="",
         status=NoteStatus.open,
         processing_status=ProcessingStatus.done,
+        storage_location=note_storage.target_location(db, user.id),
     )
     db.add(note)
     db.commit()
@@ -304,12 +312,18 @@ def update_status_web(
 
 def _save_transcript(note: Note, markdown: str, db: DbSession) -> None:
     """Shared by the explicit Save button and the background autosave
-    endpoint below - both need to write the markdown file, keep a
+    endpoint below - both need to write the markdown, keep a
     still-titleless markdown-only note's title in sync, and bump
     updated_at, just with a different response shape around it.
+
+    The write goes through note_storage so it lands wherever this note
+    actually lives (Phase 4: local disk or the owner's Drive folder). That
+    helper deliberately leaves the transaction to its caller, so the commit
+    at the bottom is what persists the note's location bookkeeping - the
+    Drive file id in particular, without which a note whose markdown was
+    just uploaded reads back empty.
     """
-    transcript_path = storage.write_markdown(note.id, markdown)
-    note.transcript_path = transcript_path
+    note_storage.write_markdown(db, note, markdown)
     if not note.audio_filename and not note.title:
         # Markdown-only note (Phase 4.2) that's never had a title yet: seed
         # it from the transcript's first heading/line so it isn't stuck
@@ -336,7 +350,7 @@ def update_transcript_web(
     if note is None or note.user_id != user.id:
         return HTMLResponse("Note not found", status_code=404)
 
-    note_storage.write_markdown(db, note, markdown)
+    _save_transcript(note, markdown, db)
     return RedirectResponse(url=f"/notes/{note_id}", status_code=303)
 
 
@@ -358,7 +372,7 @@ def autosave_transcript_web(
     if note is None or note.user_id != user.id:
         return JSONResponse({"error": "Note not found"}, status_code=404)
 
-    note_storage.write_markdown(db, note, markdown)
+    _save_transcript(note, markdown, db)
 
     return JSONResponse({"title": note.title, "saved_at": note.updated_at.isoformat()})
 
