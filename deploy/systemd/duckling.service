@@ -13,13 +13,16 @@ RestartSec=3
 # start if there was nothing to remove.
 ExecStartPre=-/usr/bin/docker rm -f duckling
 
+# Published on host port 8001 (container-side is still Duckling's own
+# 8000): the backend occupies 8000 on this host, and binding both here is
+# what made date recognition 404 against the backend itself.
 # Bound to localhost only - Duckling has no auth of its own and is only
 # ever called by the backend running on the same host (see
 # DUCKLING_BASE_URL in audionotes-backend.service). Pinned by digest (see
 # deploy/docker-compose.yml for why) rather than :latest, so a host reboot
 # / service restart can't silently pick up an untested image - bump
 # deliberately, together with that file's pin.
-ExecStart=/usr/bin/docker run --rm --name duckling -p 127.0.0.1:8000:8000 rasa/duckling@sha256:459e6033f87b0f3f525ed0d0066ae89cfe31d512f32ac1d469431fa6ce1bdef5
+ExecStart=/usr/bin/docker run --rm --name duckling -p 127.0.0.1:8001:8000 rasa/duckling@sha256:459e6033f87b0f3f525ed0d0066ae89cfe31d512f32ac1d469431fa6ce1bdef5
 ExecStop=/usr/bin/docker stop duckling
 
 [Install]
