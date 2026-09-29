@@ -28,6 +28,15 @@
 </header>
 
 <section class="record-section">
+    <form method="post" action="/notes/new" class="new-note-form">
+    <button type="submit" class="button button-secondary new-note-btn">
+      <svg class="icon" viewBox="0 0 24 24" width="18" height="18" fill="currentColor" aria-hidden="true">
+        <path d="M19,13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/>
+      </svg>
+      <span>New Markdown Note</span>
+    </button>
+  </form>
+  
   <button id="record-btn" type="button" class="record-btn" data-state="idle">
     <svg class="icon icon-mic" viewBox="0 0 24 24" width="20" height="20" fill="currentColor" aria-hidden="true">
       <path d="M12,14c1.66,0 3,-1.34 3,-3L15,5c0,-1.66 -1.34,-3 -3,-3S9,3.34 9,5v6c0,1.66 1.34,3 3,3zM17,11c0,2.76 -2.24,5 -5,5s-5,-2.24 -5,-5H5c0,3.53 2.61,6.43 6,6.92V21h2v-3.08c3.39,-0.49 6,-3.39 6,-6.92h-2z"/>
@@ -40,14 +49,6 @@
   <span id="record-timer" class="record-timer"></span>
   <span id="record-error" class="record-error" role="alert"></span>
 
-  <form method="post" action="/notes/new" class="new-note-form">
-    <button type="submit" class="button button-secondary new-note-btn">
-      <svg class="icon" viewBox="0 0 24 24" width="18" height="18" fill="currentColor" aria-hidden="true">
-        <path d="M19,13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/>
-      </svg>
-      <span>New Markdown Note</span>
-    </button>
-  </form>
 </section>
 
 <form id="filter-form" method="get" action="/" class="filters">
