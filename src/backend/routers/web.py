@@ -351,10 +351,7 @@ def update_transcript_web(
         return HTMLResponse("Note not found", status_code=404)
 
     _save_transcript(note, markdown, db)
-<<<<<<< HEAD
 
-=======
->>>>>>> 3273313 (fixes for the merge conflicts)
     return RedirectResponse(url=f"/notes/{note_id}", status_code=303)
 
 
