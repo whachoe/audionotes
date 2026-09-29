@@ -72,5 +72,9 @@ class CreateDriveFolderRequest(BaseModel):
     parent_id: Optional[str] = None
 
 
+class UpdateTitleRequest(BaseModel):
+    title: str = Field(default="")
+
+    
 class UpdateTranscriptRequest(BaseModel):
     markdown: str = Field(default="")
