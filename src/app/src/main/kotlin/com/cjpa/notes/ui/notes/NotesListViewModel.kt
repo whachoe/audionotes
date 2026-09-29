@@ -1,5 +1,6 @@
 package com.cjpa.notes.ui.notes
 
+import android.util.Log
 import android.content.Context
 import android.content.Intent
 import androidx.core.content.ContextCompat
@@ -99,6 +100,10 @@ class NotesListViewModel @Inject constructor(
             try {
                 notesRepository.refresh(sort.value)
             } catch (e: Exception) {
+                // Logged as well as shown: a snackbar disappears, and
+                // without a stack trace a decode failure here is invisible
+                // to logcat and can only be found by reading the database.
+                Log.e(TAG, "Refresh failed", e)
                 _snackbarMessages.emit("Refresh failed: ${e.message ?: "unknown error"}")
             } finally {
                 isRefreshing.value = false
@@ -125,5 +130,9 @@ class NotesListViewModel @Inject constructor(
         val action = if (isRecording) RecordingService.ACTION_STOP_RECORDING else RecordingService.ACTION_START_RECORDING
         val intent = Intent(appContext, RecordingService::class.java).setAction(action)
         ContextCompat.startForegroundService(appContext, intent)
+    }
+
+    private companion object {
+        const val TAG = "NotesListViewModel"
     }
 }

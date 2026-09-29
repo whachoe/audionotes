@@ -18,6 +18,7 @@ from ..auth import require_user
 from ..db import get_session
 from ..models import Note, NoteStatus, ProcessingStatus, StorageLocation, User, utcnow
 from ..schemas import NoteDetail, NoteListItem, UpdateStatusRequest, UpdateTitleRequest, UpdateTranscriptRequest
+from ..services import note_storage
 
 router = APIRouter(prefix="/notes", tags=["notes"])
 
