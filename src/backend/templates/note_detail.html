@@ -33,6 +33,9 @@
 {% if note.processing_error %}
 <p class="processing-error">Processing error: {{ note.processing_error }}</p>
 {% endif %}
+{% if save_error %}
+<p class="processing-error" role="alert">Couldn't save: {{ save_error }} — your text is still here, try Save again.</p>
+{% endif %}
 
 <form method="post" action="/notes/{{ note.id }}/status" class="status-form">
   <label for="status-select">Status</label>
@@ -47,6 +50,12 @@
 <audio controls preload="none" src="{{ audio_url }}" class="audio-player"></audio>
 {% endif %}
 
+{% if load_error %}
+<p class="processing-error" role="alert">
+  Couldn't load this note from Google Drive: {{ load_error }}<br>
+  The editor is hidden on purpose - saving now would overwrite the note on Drive with an empty document.
+</p>
+{% else %}
 <form method="post" action="/notes/{{ note.id }}/transcript" class="transcript-form" id="transcript-form">
   <label for="markdown">Transcript (Markdown)</label>
   <textarea id="markdown" name="markdown" rows="18">{{ transcript_markdown }}</textarea>
@@ -55,8 +64,10 @@
     <span id="autosave-status" class="autosave-status" aria-live="polite"></span>
   </div>
 </form>
+{% endif %}
 {% endblock %}
 {% block extra_scripts %}
+{% if not load_error %}
 <script src="/static/easymde.min.js"></script>
 <script>
   // Phase 4.3: a real Markdown editor (toolbar, live preview, keyboard
@@ -111,7 +122,18 @@
           headers: { "Content-Type": "application/x-www-form-urlencoded" },
           body: "markdown=" + encodeURIComponent(value),
         });
-        if (!response.ok) throw new Error("autosave failed: " + response.status);
+        if (!response.ok) {
+          // The server explains Drive failures in `error` - show that rather
+          // than a bare status code the user can do nothing with.
+          let reason = "autosave failed (" + response.status + ")";
+          try {
+            const body = await response.json();
+            if (body.error) reason = body.error;
+          } catch (err) {
+            /* non-JSON body; keep the status-code message */
+          }
+          throw new Error(reason);
+        }
         const data = await response.json();
         lastSavedValue = value;
         setStatus("Saved", false);
@@ -157,4 +179,5 @@
     });
   })();
 </script>
+{% endif %}
 {% endblock %}

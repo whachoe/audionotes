@@ -1,8 +1,9 @@
 #!/bin/bash
 set -euo pipefail
 
-# Commandline args parsing
 FULL=false
+
+# Commandline args parsing
 while test $# -gt 0
   do
       case "$1" in

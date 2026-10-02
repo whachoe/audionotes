@@ -7,6 +7,7 @@ personal note list.
 """
 from __future__ import annotations
 
+import logging
 import re
 from pathlib import Path
 from typing import List, Optional
@@ -25,6 +26,8 @@ from ..models import Session as AppSession
 from ..models import User, utcnow
 from ..services import google_drive, note_storage
 from .notes import SortBy, SortOrder
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["web"])
 
@@ -85,6 +88,20 @@ def _query_notes(db: DbSession, user: User, sort_by: SortBy, order: SortOrder, s
 
 def _filter_query_string(statuses: set[str]) -> str:
     return "&".join(f"status={value}" for value in statuses)
+
+
+def _drive_error_message(exc: google_drive.DriveError) -> str:
+    """A sentence the editor can actually show the user.
+
+    Saving a note whose home is Drive (Phase 4) is a network call, and every
+    way it can fail - a revoked grant, the Drive API switched off for the
+    Cloud project, a folder deleted out from under us - used to escape as a
+    bare 500. On the autosave path that surfaced as "Autosave failed" with
+    no hint why, indistinguishable from the app simply being broken.
+    """
+    if isinstance(exc, google_drive.DriveNotLinkedError):
+        return f"Google Drive needs to be reconnected: {exc}"
+    return f"Google Drive error: {exc}"
 
 
 _HEADING_RE = re.compile(r"^#{1,6}\s*(.+?)\s*#*$")
@@ -273,7 +290,18 @@ def note_detail_page(
     if note is None or note.user_id != user.id:
         return HTMLResponse("Note not found", status_code=404)
 
-    transcript_markdown = note_storage.read_markdown(note)
+    load_error = None
+    try:
+        transcript_markdown = note_storage.read_markdown(note)
+    except google_drive.DriveError as exc:
+        # Render the page without the editor rather than 500ing. Showing an
+        # empty editor would be worse than useless: autosave would fire a
+        # couple of seconds later and overwrite the note on Drive with the
+        # blank document we failed to load.
+        logger.exception("Couldn't load note %s from Drive", note_id)
+        transcript_markdown = ""
+        load_error = _drive_error_message(exc)
+
     return templates.TemplateResponse(
         request,
         "note_detail.html",
@@ -283,6 +311,7 @@ def note_detail_page(
             "transcript_markdown": transcript_markdown,
             "all_statuses": ALL_STATUSES,
             "audio_url": f"/api/notes/{note.id}/audio",
+            "load_error": load_error,
         },
     )
 
@@ -341,6 +370,7 @@ def _save_transcript(note: Note, markdown: str, db: DbSession) -> None:
 
 @router.post("/notes/{note_id}/transcript")
 def update_transcript_web(
+    request: Request,
     note_id: str,
     markdown: str = Form(...),
     user: User = Depends(require_web_user),
@@ -350,7 +380,25 @@ def update_transcript_web(
     if note is None or note.user_id != user.id:
         return HTMLResponse("Note not found", status_code=404)
 
-    _save_transcript(note, markdown, db)
+    try:
+        _save_transcript(note, markdown, db)
+    except google_drive.DriveError as exc:
+        # Re-render rather than redirect: redirecting to a page that reloads
+        # the note from Drive would throw away what the user just typed.
+        logger.exception("Drive save failed for note %s", note_id)
+        return templates.TemplateResponse(
+            request,
+            "note_detail.html",
+            {
+                "note": note,
+                "row": _row_context(note),
+                "transcript_markdown": markdown,
+                "all_statuses": ALL_STATUSES,
+                "audio_url": f"/api/notes/{note.id}/audio",
+                "save_error": _drive_error_message(exc),
+            },
+            status_code=502,
+        )
 
     return RedirectResponse(url=f"/notes/{note_id}", status_code=303)
 
@@ -373,7 +421,11 @@ def autosave_transcript_web(
     if note is None or note.user_id != user.id:
         return JSONResponse({"error": "Note not found"}, status_code=404)
 
-    _save_transcript(note, markdown, db)
+    try:
+        _save_transcript(note, markdown, db)
+    except google_drive.DriveError as exc:
+        logger.exception("Drive autosave failed for note %s", note_id)
+        return JSONResponse({"error": _drive_error_message(exc)}, status_code=502)
 
     return JSONResponse({"title": note.title, "saved_at": note.updated_at.isoformat()})
 

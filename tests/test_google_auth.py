@@ -227,3 +227,69 @@ def test_logout_revokes_the_session(client, google_configured, monkeypatch):
 
     status_after_logout = client.get("/api/google/auth/status", headers=headers)
     assert status_after_logout.status_code == 401
+
+
+class _ScopedAsyncClient(_FakeAsyncClient):
+    """Token-exchange stub that returns a configurable granted-scope string."""
+
+    scope = ""
+
+    async def post(self, url, data=None, **kwargs) -> _FakeTokenResponse:
+        return _FakeTokenResponse(
+            200,
+            {
+                "access_token": "fake-access-token",
+                "refresh_token": "fake-refresh-token",
+                "id_token": "fake-id-token",
+                "scope": self.scope,
+            },
+        )
+
+
+def _signin_granting(client, monkeypatch, scope: str) -> None:
+    """Run one full sign-in where Google reports `scope` as granted."""
+    _ScopedAsyncClient.scope = scope
+    monkeypatch.setattr(google_auth_module.httpx, "AsyncClient", _ScopedAsyncClient)
+    monkeypatch.setattr(
+        google_auth_module.google_id_token,
+        "verify_oauth2_token",
+        lambda token, request, audience: {
+            "sub": "same-sub",
+            "email": "allowed@example.com",
+            "email_verified": True,
+            "name": "Test User",
+        },
+    )
+    state = _start_and_get_state(client)
+    client.get(f"/api/google/auth/callback?code=abc&state={state}", follow_redirects=False)
+
+
+def test_a_plain_signin_does_not_forget_an_earlier_drive_grant(
+    client, google_configured, monkeypatch
+):
+    """Google's grants accumulate on the account: signing in again for just
+    login+Calendar does NOT revoke an earlier Drive authorization. Recording
+    only the newest response's scopes would un-link Drive here while the real
+    grant is still live - and since UserSettings.drive_enabled stays on, every
+    note save would then route to Drive and fail with "not linked".
+    """
+    from backend.services import google_drive
+
+    drive_scope = google_drive.SCOPES[0]
+    login_scopes = "openid email profile https://www.googleapis.com/auth/calendar.events"
+
+    # 1. Link Drive (what the settings page's "Connect Google Drive" does).
+    _signin_granting(client, monkeypatch, f"{login_scopes} {drive_scope}")
+    with db.session_scope() as session:
+        user = session.exec(select(User).where(User.google_sub == "same-sub")).first()
+        assert google_drive.is_linked(session, user.id) is True
+
+    # 2. Sign in again normally - the Android app and the web login page both
+    #    hit /start with no drive=1.
+    _signin_granting(client, monkeypatch, login_scopes)
+
+    with db.session_scope() as session:
+        user = session.exec(select(User).where(User.google_sub == "same-sub")).first()
+        assert google_drive.is_linked(session, user.id) is True, (
+            "a plain sign-in wiped the recorded Drive grant"
+        )

@@ -208,7 +208,21 @@ async def callback(
     # What Google actually granted, which is not necessarily what we asked
     # for - the user can untick individual scopes on the consent screen, and
     # "is Drive linked?" (Phase 4) has to reflect their answer, not our ask.
-    cred.scopes = payload.get("scope") or cred.scopes
+    #
+    # Merged, never replaced: OAuth grants accumulate on the Google account,
+    # so signing in again for just login + Calendar does NOT revoke an
+    # earlier Drive authorization. Both the Android app and the web login
+    # page start at /start with no drive=1, so overwriting here would make
+    # an ordinary sign-in silently un-link Drive - while
+    # UserSettings.drive_enabled stays on, routing every note save to a Drive
+    # we have just told ourselves we cannot reach.
+    #
+    # If Drive really is revoked, the next Drive call comes back 403 and is
+    # reported as "reconnect": Google is the authority on this, not a string
+    # we cached at sign-in.
+    granted = cred.granted_scopes() | {scope for scope in (payload.get("scope") or "").split() if scope}
+    if granted:
+        cred.scopes = " ".join(sorted(granted))
     cred.updated_at = utcnow()
     session.add(cred)
 

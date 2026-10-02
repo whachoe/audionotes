@@ -478,3 +478,118 @@ def test_a_new_markdown_note_is_born_in_the_users_chosen_storage(
         assert note.transcript_drive_file_id  # and the id was committed
         assert note_storage.read_markdown(note) == "# Typed\n\nbody\n"
     assert not storage.markdown_path(note_id).exists()
+
+
+# --- A failing Drive must not take the editor down -------------------------
+
+
+def _web_session(test_user) -> str:
+    from backend.models import Session as AppSession
+
+    with db.session_scope() as session:
+        app_session = AppSession(user_id=test_user.id)
+        session.add(app_session)
+        session.commit()
+        session.refresh(app_session)
+        return app_session.token
+
+
+def _enable_drive(user_id: str, folder_id: str = "folder-1") -> None:
+    with db.session_scope() as session:
+        settings = note_storage.get_user_settings(session, user_id)
+        settings.drive_enabled = True
+        settings.drive_folder_id = folder_id
+        settings.drive_folder_name = "Notes"
+        session.add(settings)
+        session.commit()
+
+
+def test_saving_to_a_broken_drive_reports_why_and_keeps_the_users_text(
+    client, test_user, fake_drive, env_setup, monkeypatch
+):
+    """Drive is where the note lives, so a save is a network call that can
+    fail. It used to escape as a bare 500; worse, redirecting afterwards
+    would have reloaded the note from Drive and discarded what was typed."""
+    from backend.auth import SESSION_COOKIE_NAME
+
+    _link_drive(test_user)
+    _enable_drive(test_user.id)
+    client.cookies.set(SESSION_COOKIE_NAME, _web_session(test_user))
+
+    created = client.post("/notes/new", follow_redirects=False)
+    note_id = created.headers["location"].rsplit("/", 1)[-1]
+
+    def boom(*args, **kwargs):
+        raise google_drive.DriveError("Drive is having a day")
+
+    monkeypatch.setattr(google_drive, "upload_file", boom)
+
+    response = client.post(
+        f"/notes/{note_id}/transcript",
+        data={"markdown": "# Precious\n\ndo not lose me\n"},
+        follow_redirects=False,
+    )
+    assert response.status_code == 502
+    assert "Drive is having a day" in response.text
+    assert "do not lose me" in response.text  # text survived the failure
+
+
+def test_autosave_against_a_broken_drive_returns_the_reason_not_a_500(
+    client, test_user, fake_drive, env_setup, monkeypatch
+):
+    from backend.auth import SESSION_COOKIE_NAME
+
+    _link_drive(test_user)
+    _enable_drive(test_user.id)
+    client.cookies.set(SESSION_COOKIE_NAME, _web_session(test_user))
+
+    created = client.post("/notes/new", follow_redirects=False)
+    note_id = created.headers["location"].rsplit("/", 1)[-1]
+
+    def revoked(*args, **kwargs):
+        raise google_drive.DriveNotLinkedError("the grant is gone")
+
+    monkeypatch.setattr(google_drive, "upload_file", revoked)
+
+    response = client.post(f"/notes/{note_id}/transcript/autosave", data={"markdown": "# x"})
+    assert response.status_code == 502
+    assert "reconnected" in response.json()["error"]
+    assert "the grant is gone" in response.json()["error"]
+
+
+def test_a_drive_note_that_cannot_be_loaded_hides_the_editor(
+    client, test_user, fake_drive, env_setup, monkeypatch
+):
+    """Rendering an empty editor would be actively destructive: autosave
+    fires a couple of seconds later and would replace the note on Drive with
+    the blank document we failed to load."""
+    from backend.auth import SESSION_COOKIE_NAME
+
+    _link_drive(test_user)
+    _enable_drive(test_user.id)
+    client.cookies.set(SESSION_COOKIE_NAME, _web_session(test_user))
+
+    with db.session_scope() as session:
+        note = Note(
+            user_id=test_user.id,
+            audio_filename="",
+            processing_status=ProcessingStatus.done,
+            storage_location=StorageLocation.drive,
+            transcript_drive_file_id="file-1",
+            title="Important note",
+        )
+        session.add(note)
+        session.commit()
+        session.refresh(note)
+        note_id = note.id
+
+    def boom(*args, **kwargs):
+        raise google_drive.DriveError("Drive unreachable")
+
+    monkeypatch.setattr(google_drive, "download_file", boom)
+
+    response = client.get(f"/notes/{note_id}")
+    assert response.status_code == 200          # not a 500
+    assert "Drive unreachable" in response.text
+    assert 'id="transcript-form"' not in response.text   # editor withheld
+    assert "Important note" in response.text             # note still identifiable
