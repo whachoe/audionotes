@@ -123,7 +123,7 @@ fun SettingsScreen(
                 value = uiState.baseUrl,
                 onValueChange = viewModel::onBaseUrlChanged,
                 label = { Text("Server base URL") },
-                placeholder = { Text("https://notes.example.com") },
+                placeholder = { Text("https://notes.copywaste.org") },
                 singleLine = true,
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri),
                 modifier = Modifier.fillMaxWidth()

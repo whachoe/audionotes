@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Auto-backup rules for Android 11 and below (android:fullBackupContent).
+
+  The encrypted settings file must never be restored: its Tink keyset is
+  only readable with a master key held in the Android Keystore, and that key
+  is destroyed on uninstall and never backed up. Restoring the file without
+  it makes EncryptedSharedPreferences.create() throw, which used to crash
+  the app on every launch after a reinstall.
+-->
+<full-backup-content>
+    <exclude domain="sharedpref" path="cjpa_notes_secure_settings.xml" />
+</full-backup-content>
