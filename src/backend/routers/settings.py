@@ -33,6 +33,27 @@ logger = logging.getLogger(__name__)
 router = APIRouter(tags=["settings"])
 
 
+def _drive_http_error(exc: google_drive.DriveError, user_id: str) -> HTTPException:
+    """Turn a Drive failure into something the settings page can show.
+
+    Without this every Drive-side problem - an expired grant, the Drive API
+    not enabled on the Cloud project, a transient 5xx - surfaced as a bare
+    500 with an empty body, which is useless to whoever is staring at the
+    settings page wondering why Save did nothing.
+    """
+    logger.exception("Drive call failed for user %s", user_id)
+    if isinstance(exc, google_drive.DriveNotEnabledError):
+        # Server setup problem, not the caller's fault - the same 503 the
+        # rest of the app uses for "this feature isn't configured here yet".
+        return HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc))
+    if isinstance(exc, google_drive.DriveNotLinkedError):
+        return HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Google Drive needs to be reconnected: {exc}",
+        )
+    return HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=f"Google Drive error: {exc}")
+
+
 def _to_storage_settings(session: DbSession, user: User) -> StorageSettings:
     settings = note_storage.get_user_settings(session, user.id)
     return StorageSettings(
@@ -76,15 +97,22 @@ async def update_storage_settings(
                 detail="Google Drive isn't linked yet - connect it before enabling this.",
             )
 
-        if payload.drive_folder_id:
-            folder = await run_in_threadpool(google_drive.get_folder, user.id, payload.drive_folder_id)
-            if folder is None:
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail="That Drive folder doesn't exist any more.",
-                )
-        else:
-            folder = await run_in_threadpool(google_drive.ensure_default_folder, user.id)
+        try:
+            if payload.drive_folder_id:
+                folder = await run_in_threadpool(google_drive.get_folder, user.id, payload.drive_folder_id)
+            else:
+                # is_linked() above only proves we recorded the scope once -
+                # this is the first call that actually exercises the grant,
+                # so it's where a dead or never-granted permission shows up.
+                folder = await run_in_threadpool(google_drive.ensure_default_folder, user.id)
+        except google_drive.DriveError as exc:
+            raise _drive_http_error(exc, user.id) from exc
+
+        if folder is None:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="That Drive folder doesn't exist any more.",
+            )
 
         settings.drive_enabled = True
         settings.drive_folder_id = folder["id"]
@@ -128,7 +156,7 @@ async def list_drive_folders(
             else await run_in_threadpool(google_drive.get_folder, user.id, parent_id)
         )
     except google_drive.DriveError as exc:
-        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
+        raise _drive_http_error(exc, user.id) from exc
 
     return DriveFolderList(
         parent_id=parent_id,
@@ -153,7 +181,7 @@ async def create_drive_folder(
             google_drive.create_folder, user.id, name, payload.parent_id or google_drive.ROOT_FOLDER_ID
         )
     except google_drive.DriveError as exc:
-        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
+        raise _drive_http_error(exc, user.id) from exc
     return DriveFolder(**created)
 
 

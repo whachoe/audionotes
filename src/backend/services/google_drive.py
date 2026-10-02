@@ -14,6 +14,7 @@ drive.file only ever grants access to files the app itself created.
 from __future__ import annotations
 
 import io
+import json
 import logging
 from typing import BinaryIO, Optional
 
@@ -45,6 +46,52 @@ class DriveError(RuntimeError):
 
 class DriveNotLinkedError(DriveError):
     """The user hasn't granted the Drive scope (or has revoked it)."""
+
+
+class DriveNotEnabledError(DriveError):
+    """The Drive API isn't turned on for this server's Google Cloud project.
+
+    Its own class because it's a server setup problem rather than anything
+    the signed-in user did or can fix - and it's the first thing a new
+    deployment trips over: enabling the Calendar API (Phase 2) does not
+    enable Drive, so credentials work right up until the first Drive call
+    comes back 403 accessNotConfigured.
+    """
+
+
+def _error_reason(exc: HttpError) -> str:
+    """Google's machine-readable `reason` for an HttpError, or "".
+
+    The human-readable message is localized and unstable; `reason` is the
+    part that's safe to branch on.
+    """
+    try:
+        payload = json.loads(exc.content.decode("utf-8"))
+    except Exception:  # noqa: BLE001 - a non-JSON body just means "unknown"
+        return ""
+    errors = (payload.get("error") or {}).get("errors") or []
+    if isinstance(errors, list) and errors:
+        return errors[0].get("reason") or ""
+    return ""
+
+
+def _wrap_http_error(exc: HttpError, what: str) -> DriveError:
+    """Translate an HttpError into the most specific DriveError that fits."""
+    status_code = getattr(getattr(exc, "resp", None), "status", None)
+    reason = _error_reason(exc)
+
+    if status_code == 403 and reason == "accessNotConfigured":
+        return DriveNotEnabledError(
+            "The Google Drive API isn't enabled for this server's Google Cloud project. "
+            "Enable it under APIs & Services -> Library -> Google Drive API, wait a minute "
+            "for it to propagate, then try again. (The server log has the direct link.)"
+        )
+    if status_code in (401, 403) and reason in {"insufficientPermissions", "insufficientFilePermissions"}:
+        return DriveNotLinkedError(
+            "Google didn't grant this app access to your Drive. Reconnect Google Drive and "
+            "make sure the Drive permission stays ticked on the consent screen."
+        )
+    return DriveError(f"{what}: {exc}")
 
 
 def has_drive_scope(cred: Optional[GoogleCredential]) -> bool:
@@ -126,7 +173,7 @@ def list_folders(user_id: str, parent_id: str = ROOT_FOLDER_ID) -> list[dict]:
                 .execute()
             )
         except HttpError as exc:
-            raise DriveError(f"Couldn't list Drive folders: {exc}") from exc
+            raise _wrap_http_error(exc, "Couldn't list Drive folders") from exc
         return [{"id": f["id"], "name": f["name"]} for f in response.get("files", [])]
 
 
@@ -143,7 +190,7 @@ def get_folder(user_id: str, folder_id: str) -> Optional[dict]:
         except HttpError as exc:
             if exc.resp.status == 404:
                 return None
-            raise DriveError(f"Couldn't read Drive folder: {exc}") from exc
+            raise _wrap_http_error(exc, "Couldn't read Drive folder") from exc
         if found.get("mimeType") != FOLDER_MIME_TYPE or found.get("trashed"):
             return None
         parents = found.get("parents") or []
@@ -157,7 +204,7 @@ def create_folder(user_id: str, name: str, parent_id: str = ROOT_FOLDER_ID) -> d
         try:
             created = service.files().create(body=body, fields="id, name").execute()
         except HttpError as exc:
-            raise DriveError(f"Couldn't create Drive folder: {exc}") from exc
+            raise _wrap_http_error(exc, "Couldn't create Drive folder") from exc
         return {"id": created["id"], "name": created["name"]}
 
 
@@ -177,7 +224,7 @@ def ensure_default_folder(user_id: str) -> dict:
         try:
             response = service.files().list(q=query, fields="files(id, name)", pageSize=1).execute()
         except HttpError as exc:
-            raise DriveError(f"Couldn't look for the default Drive folder: {exc}") from exc
+            raise _wrap_http_error(exc, "Couldn't look for the default Drive folder") from exc
         existing = response.get("files", [])
         if existing:
             return {"id": existing[0]["id"], "name": existing[0]["name"]}
@@ -218,7 +265,7 @@ def upload_file(
                 .execute()
             )
         except HttpError as exc:
-            raise DriveError(f"Couldn't upload {filename} to Drive: {exc}") from exc
+            raise _wrap_http_error(exc, f"Couldn't upload {filename} to Drive") from exc
         return created["id"]
 
 
@@ -231,7 +278,7 @@ def _find_file_id(service, folder_id: str, filename: str) -> Optional[str]:
     try:
         response = service.files().list(q=query, fields="files(id)", pageSize=1).execute()
     except HttpError as exc:
-        raise DriveError(f"Couldn't look up {filename} on Drive: {exc}") from exc
+        raise _wrap_http_error(exc, f"Couldn't look up {filename} on Drive") from exc
     files = response.get("files", [])
     return files[0]["id"] if files else None
 
@@ -254,7 +301,7 @@ def update_file(
         try:
             updated = service.files().update(fileId=file_id, media_body=media, fields="id").execute()
         except HttpError as exc:
-            raise DriveError(f"Couldn't update file {file_id} on Drive: {exc}") from exc
+            raise _wrap_http_error(exc, f"Couldn't update file {file_id} on Drive") from exc
         return updated["id"]
 
 
@@ -268,7 +315,7 @@ def download_file(user_id: str, file_id: str) -> bytes:
             while not done:
                 _, done = downloader.next_chunk()
         except HttpError as exc:
-            raise DriveError(f"Couldn't download file {file_id} from Drive: {exc}") from exc
+            raise _wrap_http_error(exc, f"Couldn't download file {file_id} from Drive") from exc
         return buffer.getvalue()
 
 
@@ -287,4 +334,4 @@ def delete_file(user_id: str, file_id: str) -> None:
             if exc.resp.status == 404:
                 logger.info("Drive file %s already gone; nothing to trash", file_id)
                 return
-            raise DriveError(f"Couldn't remove file {file_id} from Drive: {exc}") from exc
+            raise _wrap_http_error(exc, f"Couldn't remove file {file_id} from Drive") from exc

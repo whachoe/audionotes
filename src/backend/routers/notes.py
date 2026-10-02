@@ -18,7 +18,7 @@ from ..auth import require_user
 from ..db import get_session
 from ..models import Note, NoteStatus, ProcessingStatus, StorageLocation, User, utcnow
 from ..schemas import NoteDetail, NoteListItem, UpdateStatusRequest, UpdateTitleRequest, UpdateTranscriptRequest
-from ..services import note_storage
+from ..services import google_drive, note_storage
 
 router = APIRouter(prefix="/notes", tags=["notes"])
 
@@ -81,7 +81,13 @@ async def _detail_response(note: Note) -> NoteDetail:
     a blocking Drive download for one that lives in Drive (Phase 4), and
     the handlers below are async - so always take the threadpool hop.
     """
-    return await run_in_threadpool(_to_detail, note)
+    try:
+        return await run_in_threadpool(_to_detail, note)
+    except google_drive.DriveError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"Couldn't read this note from Google Drive: {exc}",
+        ) from exc
 
 
 def _get_own_note_or_404(session: Session, note_id: str, user: User) -> Note:
@@ -187,7 +193,13 @@ async def update_transcript(
     session: Session = Depends(get_session),
 ) -> NoteDetail:
     note = _get_own_note_or_404(session, note_id, user)
-    await run_in_threadpool(note_storage.write_markdown, session, note, payload.markdown)
+    try:
+        await run_in_threadpool(note_storage.write_markdown, session, note, payload.markdown)
+    except google_drive.DriveError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"Couldn't save this note to Google Drive: {exc}",
+        ) from exc
     note.updated_at = utcnow()
     session.add(note)
     session.commit()
@@ -232,7 +244,15 @@ async def get_audio(
         # gain from streaming it through - fetch once (off the event loop,
         # googleapiclient is blocking) and slice in memory for Range
         # requests, which is what the browser's audio element sends.
-        audio_bytes = await run_in_threadpool(note_storage.read_audio_bytes, note)
+        try:
+            audio_bytes = await run_in_threadpool(note_storage.read_audio_bytes, note)
+        except google_drive.DriveError as exc:
+            # 502, not 500: the note and our handling of it are fine, the
+            # upstream we proxy the bytes from is not.
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail=f"Couldn't fetch this note's audio from Google Drive: {exc}",
+            ) from exc
         file_size = len(audio_bytes)
 
         def read_full():
