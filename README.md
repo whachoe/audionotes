@@ -2,11 +2,9 @@
 
 A little app i use to quickly record audionotes to myself, make a transcription of it and if there's date/times present, schedule it in my Google Calendar. 
 
-
 - Android app
 - HTML-frontend (hosted at notes.copywaste.org)
 - Web API backend in Python doing the transliteration and calendar-scheduling
-
 
 ## Install
 
@@ -25,7 +23,7 @@ values — Google sign-in is the only way to log in.
 
 Title summarization (Ollama) and date recognition (Duckling) are optional —
 without them notes still transcribe, they just get a fallback title and no
-`scheduledAt`:
+`scheduledAt`.
 
 ```bash
 docker compose -f deploy/docker-compose.yml -f deploy/docker-compose.test.yml up -d ollama duckling
@@ -57,5 +55,4 @@ cd src
 adb install -r app/build/outputs/apk/debug/app-debug.apk
 ```
 
- On first launch, set the backend URL and sign in from
-the app's Settings screen.
+On first launch, set the backend URL and sign in from the app's Settings screen.

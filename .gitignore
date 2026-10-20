@@ -9,7 +9,8 @@ __pycache__/
 *.egg-info/
 
 # Backend runtime data (audio files, transcripts, sqlite db)
-data/
+/data/
+/deploy/data/
 
 # Env files with secrets
 .env

@@ -19,7 +19,7 @@ class Settings(BaseSettings):
 
     # Ollama configuration for title summarization.
     OLLAMA_BASE_URL: str = "http://localhost:11434"
-    OLLAMA_MODEL: str = "llama3.2:3b"
+    OLLAMA_MODEL: str = "qwen2.5:14b"
 
     # Duckling (Phase 4) HTTP service used for date/time recognition.
     DUCKLING_BASE_URL: str = "http://localhost:8001"
